@@ -395,20 +395,44 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         notify_service = opts.get(CONF_NOTIFY_SERVICE, "")
         if not notify_service:
+            # Kein Service konfiguriert → persistent notification als Fallback
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "persistent_notification", "create",
+                    {"title": title, "message": message, "notification_id": "brunnen_bewasserung"},
+                )
+            )
             return
 
         try:
             parts = notify_service.split(".")
             domain = parts[0]
             service = ".".join(parts[1:]) if len(parts) > 1 else "send_message"
+
+            # Script-Domain: master_notify braucht Extra-Felder
+            if domain == "script":
+                data = {
+                    "title": title,
+                    "message": message,
+                    "group_admins_enable": True,
+                    "group_family_enable": True,
+                    "alexa_enabled": False,
+                    "google_enabled": False,
+                    "critical_enabled": False,
+                }
+            else:
+                data = {"title": title, "message": message}
+
             await self.hass.services.async_call(
-                domain, service,
-                {"title": title, "message": message},
-                blocking=False,
+                domain, service, data, blocking=False,
             )
-        except Exception:
-            self.hass.components.persistent_notification.async_create(
-                message, title=title
+        except Exception as e:
+            _LOGGER.error("Brunnen Bewässerung Notify Fehler: %s", e)
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "persistent_notification", "create",
+                    {"title": title, "message": message, "notification_id": "brunnen_bewasserung"},
+                )
             )
     def _calculate_runtime(self) -> float:
         opts = self.options
