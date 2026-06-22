@@ -31,6 +31,7 @@ async def async_setup_entry(
         BrunnenRemainingTimeSensor(coordinator, entry),
         BrunnenStateSensor(coordinator, entry),
         BrunnenPauseModeSensor(coordinator, entry),
+        BrunnenBlockRemainingTimeSensor(coordinator, entry),
     ])
 
 
@@ -140,3 +141,28 @@ class BrunnenPauseModeSensor(_BrunnenSensorBase):
     @property
     def icon(self) -> str:
         return "mdi:water-pump" if self.coordinator.pause_mode == "sensor" else "mdi:timer"
+
+
+class BrunnenBlockRemainingTimeSensor(_BrunnenSensorBase):
+    """Live-Countdown des aktuellen Bewässerungsblocks."""
+
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_icon = "mdi:timer-sand"
+
+    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_block_remaining"
+        self._attr_name = "Aktuelle Etappe"
+
+    @property
+    def native_value(self):
+        return round(self.coordinator._block_remaining_s, 0)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "block_remaining_seconds": self.coordinator._block_remaining_s,
+            "current_block": self.coordinator._current_block,
+            "total_blocks": self.coordinator._total_blocks,
+        }
