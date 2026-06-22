@@ -200,7 +200,8 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
-        self._data: dict = dict(config_entry.options)
+        # Merge: data als Basis, options überschreiben (persistierte Änderungen)
+        self._data: dict = {**config_entry.data, **config_entry.options}
 
     async def async_step_init(self, user_input=None):
         return await self.async_step_optional_sensors(user_input)
