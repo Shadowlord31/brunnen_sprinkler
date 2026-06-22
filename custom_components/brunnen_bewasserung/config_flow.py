@@ -94,7 +94,7 @@ def _optional_sensors_schema(hass, defaults: dict, own_entry_id: str | None = No
     return vol.Schema({
         vol.Optional(CONF_NEXT_ZONE_ENTRY_ID, default=defaults.get(CONF_NEXT_ZONE_ENTRY_ID, "")):
             SelectSelector(SelectSelectorConfig(options=next_zone_options, mode=SelectSelectorMode.DROPDOWN)),
-        vol.Optional(CONF_WATER_LEVEL_SENSOR, default=defaults.get(CONF_WATER_LEVEL_SENSOR, "")):
+        vol.Optional(CONF_WATER_LEVEL_SENSOR):
             EntitySelector(EntitySelectorConfig(domain="sensor")),
         vol.Required(CONF_WATER_LEVEL_LOW, default=defaults.get(CONF_WATER_LEVEL_LOW, DEFAULT_WATER_LEVEL_LOW)):
             NumberSelector(NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)),
@@ -166,7 +166,7 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 # Leere Strings in None umwandeln
                 for key in (CONF_NEXT_ZONE_ENTRY_ID, CONF_WATER_LEVEL_SENSOR):
-                    if user_input.get(key) == "":
+                    if user_input.get(key, "") == "":
                         user_input[key] = None
                 self._data.update(user_input)
                 return await self.async_step_settings()
@@ -216,7 +216,7 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
 
             if not errors:
                 for key in (CONF_NEXT_ZONE_ENTRY_ID, CONF_WATER_LEVEL_SENSOR):
-                    if user_input.get(key) == "":
+                    if user_input.get(key, "") == "":
                         user_input[key] = None
                 self._data.update(user_input)
                 return await self.async_step_settings()
