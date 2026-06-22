@@ -12,6 +12,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
     TextSelector,
+    TextSelectorConfig,
     TimeSelector,
     BooleanSelector,
 )
