@@ -1,0 +1,63 @@
+start:
+  name: Bewässerung starten
+  description: "Startet die Bewässerung sofort (ignoriert Tagessperre)"
+  fields:
+    entry_id:
+      name: Instanz-ID
+      description: "ID der Ziel-Instanz (optional, Standard: erste Instanz)"
+      example: "abc123def456"
+      selector:
+        text:
+
+stop:
+  name: Bewässerung stoppen
+  description: "Bricht die aktuelle Bewässerung oder Pause ab"
+  fields:
+    entry_id:
+      name: Instanz-ID
+      description: "ID der Ziel-Instanz (optional)"
+      selector:
+        text:
+
+skip_today:
+  name: Heute überspringen
+  description: "Überspringt den heutigen automatischen Lauf"
+  fields:
+    entry_id:
+      name: Instanz-ID
+      description: "ID der Ziel-Instanz (optional)"
+      selector:
+        text:
+
+start_sequence:
+  name: Zonen-Sequenz starten
+  description: "Startet die komplette Zonen-Sequenz ab dieser Instanz"
+  fields:
+    entry_id:
+      name: Start-Instanz-ID
+      description: "ID der Start-Instanz (optional)"
+      selector:
+        text:
+
+notify:
+  name: Benachrichtigung senden
+  description: "Sendet eine Benachrichtigung über den Brunnen-Bewässerungs-Service"
+  fields:
+    entry_id:
+      name: Instanz-ID
+      description: "ID der Ziel-Instanz (optional)"
+      selector:
+        text:
+    title:
+      name: Titel
+      description: "Titel der Benachrichtigung"
+      example: "Brunnen Bewässerung"
+      selector:
+        text:
+    message:
+      name: Nachricht
+      description: "Nachrichtentext"
+      example: "Bewässerung gestartet"
+      required: true
+      selector:
+        text:

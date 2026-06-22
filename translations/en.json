@@ -1,0 +1,80 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Brunnen Bewässerung – Required Entities",
+        "data": {
+          "instance_name": "Zone Name",
+          "pump_switch": "Pump Switch",
+          "moisture_sensor": "Soil Moisture Sensor",
+          "solar_sensor": "Solar Sensor",
+          "wind_speed_sensor": "Wind Speed Sensor",
+          "wind_gust_sensor": "Wind Gust Sensor",
+          "giess_assistent_enabled": "Irrigation Assistant Active",
+          "giess_assistent_sensor": "Irrigation Assistant Sensor (optional)"
+        }
+      },
+      "optional_sensors": {
+        "title": "Optional Sensors & Zone Chaining",
+        "data": {
+          "next_zone_entry_id": "Next Zone (optional)",
+          "water_level_sensor": "Water Level Sensor (optional)",
+          "water_level_low": "Pump OFF below (%)",
+          "water_level_high": "Pump ON above (%)",
+          "water_level_timeout": "Max. wait time (minutes)"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "target_moisture": "Target Soil Moisture (%)",
+          "seconds_per_percent": "Seconds per Percent (s/%)",
+          "min_runtime": "Minimum Runtime (min)",
+          "max_runtime": "Maximum Runtime (min)",
+          "block_duration": "Block Duration (min)",
+          "pause_duration": "Pause Duration (min)",
+          "wind_speed_limit": "Wind Speed Limit (km/h)",
+          "wind_gust_limit": "Wind Gust Limit (km/h)",
+          "solar_threshold": "Solar Threshold (W/m²)",
+          "earliest_start": "Earliest Start Time"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "One or more entities were not found.",
+      "water_level_invalid": "Water level OFF value must be less than water level ON value."
+    }
+  },
+  "options": {
+    "step": {
+      "optional_sensors": {
+        "title": "Optional Sensors & Zone Chaining",
+        "data": {
+          "next_zone_entry_id": "Next Zone (optional)",
+          "water_level_sensor": "Water Level Sensor (optional)",
+          "water_level_low": "Pump OFF below (%)",
+          "water_level_high": "Pump ON above (%)",
+          "water_level_timeout": "Max. wait time (minutes)"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "target_moisture": "Target Soil Moisture (%)",
+          "seconds_per_percent": "Seconds per Percent (s/%)",
+          "min_runtime": "Minimum Runtime (min)",
+          "max_runtime": "Maximum Runtime (min)",
+          "block_duration": "Block Duration (min)",
+          "pause_duration": "Pause Duration (min)",
+          "wind_speed_limit": "Wind Speed Limit (km/h)",
+          "wind_gust_limit": "Wind Gust Limit (km/h)",
+          "solar_threshold": "Solar Threshold (W/m²)",
+          "earliest_start": "Earliest Start Time"
+        }
+      }
+    },
+    "error": {
+      "water_level_invalid": "Water level OFF value must be less than water level ON value."
+    }
+  }
+}

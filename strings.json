@@ -1,0 +1,80 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Brunnen Bewässerung – Pflicht-Entitäten",
+        "data": {
+          "instance_name": "Zonenname",
+          "pump_switch": "Pumpen-Schalter",
+          "moisture_sensor": "Bodenfeuchtesensor",
+          "solar_sensor": "Solar-Sensor",
+          "wind_speed_sensor": "Windgeschwindigkeits-Sensor",
+          "wind_gust_sensor": "Windböen-Sensor",
+          "giess_assistent_enabled": "Gieß-Assistent aktiv",
+          "giess_assistent_sensor": "Gieß-Assistent Sensor (optional)"
+        }
+      },
+      "optional_sensors": {
+        "title": "Optionale Sensoren & Verkettung",
+        "data": {
+          "next_zone_entry_id": "Nächste Zone (optional)",
+          "water_level_sensor": "Wasserstand-Sensor (optional)",
+          "water_level_low": "Pumpe AUS unter (%)",
+          "water_level_high": "Pumpe AN über (%)",
+          "water_level_timeout": "Max. Wartezeit (Minuten)"
+        }
+      },
+      "settings": {
+        "title": "Einstellungen",
+        "data": {
+          "target_moisture": "Ziel-Bodenfeuchte (%)",
+          "seconds_per_percent": "Sekunden pro Prozent (s/%)",
+          "min_runtime": "Minimale Laufzeit (min)",
+          "max_runtime": "Maximale Laufzeit (min)",
+          "block_duration": "Block-Dauer (min)",
+          "pause_duration": "Pause-Dauer (min)",
+          "wind_speed_limit": "Wind-Limit (km/h)",
+          "wind_gust_limit": "Böen-Limit (km/h)",
+          "solar_threshold": "Solar-Schwellwert (W/m²)",
+          "earliest_start": "Frühestzeit Start"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Eine oder mehrere Entitäten wurden nicht gefunden.",
+      "water_level_invalid": "Wasserstand-AUS-Wert muss kleiner als Wasserstand-AN-Wert sein."
+    }
+  },
+  "options": {
+    "step": {
+      "optional_sensors": {
+        "title": "Optionale Sensoren & Verkettung",
+        "data": {
+          "next_zone_entry_id": "Nächste Zone (optional)",
+          "water_level_sensor": "Wasserstand-Sensor (optional)",
+          "water_level_low": "Pumpe AUS unter (%)",
+          "water_level_high": "Pumpe AN über (%)",
+          "water_level_timeout": "Max. Wartezeit (Minuten)"
+        }
+      },
+      "settings": {
+        "title": "Einstellungen",
+        "data": {
+          "target_moisture": "Ziel-Bodenfeuchte (%)",
+          "seconds_per_percent": "Sekunden pro Prozent (s/%)",
+          "min_runtime": "Minimale Laufzeit (min)",
+          "max_runtime": "Maximale Laufzeit (min)",
+          "block_duration": "Block-Dauer (min)",
+          "pause_duration": "Pause-Dauer (min)",
+          "wind_speed_limit": "Wind-Limit (km/h)",
+          "wind_gust_limit": "Böen-Limit (km/h)",
+          "solar_threshold": "Solar-Schwellwert (W/m²)",
+          "earliest_start": "Frühestzeit Start"
+        }
+      }
+    },
+    "error": {
+      "water_level_invalid": "Wasserstand-AUS-Wert muss kleiner als Wasserstand-AN-Wert sein."
+    }
+  }
+}
