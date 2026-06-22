@@ -220,17 +220,17 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def async_get_options_flow(config_entry):
-        return BrunnenBewasserungOptionsFlow(config_entry)
+        return BrunnenBewasserungOptionsFlow()
 
 
 class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._entry = config_entry
-        # Merge: data als Basis, options überschreiben (persistierte Änderungen)
-        self._data: dict = {**config_entry.data, **config_entry.options}
+    def __init__(self) -> None:
+        self._data: dict = {}
 
     async def async_step_init(self, user_input=None):
+        # Merge data + options beim ersten Aufruf
+        self._data = {**self.config_entry.data, **self.config_entry.options}
         return await self.async_step_optional_sensors(user_input)
 
     async def async_step_optional_sensors(self, user_input=None):
@@ -251,7 +251,7 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="optional_sensors",
-            data_schema=_optional_sensors_schema(self.hass, self._data, self._entry.entry_id),
+            data_schema=_optional_sensors_schema(self.hass, self._data, self.config_entry.entry_id),
             errors=errors,
         )
 
