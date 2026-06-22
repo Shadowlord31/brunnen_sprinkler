@@ -446,7 +446,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         opts = self.options
         earliest_str = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START)
         try:
-            h, m = map(int, earliest_str.split(":"))
+            parts = earliest_str.split(":")
+            h, m = int(parts[0]), int(parts[1])
             earliest = time(h, m)
         except (ValueError, AttributeError):
             return False
@@ -519,7 +520,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         earliest_str = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START)
         try:
-            h, m = map(int, earliest_str.split(":"))
+            parts = earliest_str.split(":")
+            h, m = int(parts[0]), int(parts[1])
             earliest = time(h, m)
         except (ValueError, AttributeError):
             return "Unbekannt"
