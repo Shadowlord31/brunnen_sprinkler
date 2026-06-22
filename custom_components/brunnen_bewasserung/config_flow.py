@@ -83,8 +83,8 @@ def _settings_schema(defaults: dict) -> vol.Schema:
             NumberSelector(NumberSelectorConfig(min=50, max=1000, step=10, unit_of_measurement="W/m²", mode=NumberSelectorMode.BOX)),
         vol.Required(CONF_EARLIEST_START, default=defaults.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START)):
             TimeSelector(),
-        vol.Optional(CONF_NOTIFY_SERVICE, default=defaults.get(CONF_NOTIFY_SERVICE, "")):
-            TextSelector(TextSelectorConfig(autocomplete="off")),
+        vol.Optional(CONF_NOTIFY_SERVICE):
+            EntitySelector(EntitySelectorConfig(domain=["notify", "script"])),
         vol.Optional(CONF_NOTIFY_TITLE, default=defaults.get(CONF_NOTIFY_TITLE, DEFAULT_NOTIFY_TITLE)):
             TextSelector(TextSelectorConfig(autocomplete="off")),
     })
