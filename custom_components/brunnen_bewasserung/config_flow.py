@@ -33,6 +33,22 @@ from .const import (
     CONF_WATER_LEVEL_HIGH,
     CONF_WATER_LEVEL_TIMEOUT,
     CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_ON_START,
+    CONF_NOTIFY_ON_FINISH,
+    CONF_NOTIFY_ON_BLOCK_PAUSE,
+    CONF_NOTIFY_ON_STOP,
+    CONF_NOTIFY_ON_WIND,
+    CONF_NOTIFY_ON_WATER_LEVEL,
+    CONF_NOTIFY_ON_NEXT_ZONE,
+    CONF_NOTIFY_ON_NO_WATER_NEEDED,
+    DEFAULT_NOTIFY_ON_START,
+    DEFAULT_NOTIFY_ON_FINISH,
+    DEFAULT_NOTIFY_ON_BLOCK_PAUSE,
+    DEFAULT_NOTIFY_ON_STOP,
+    DEFAULT_NOTIFY_ON_WIND,
+    DEFAULT_NOTIFY_ON_WATER_LEVEL,
+    DEFAULT_NOTIFY_ON_NEXT_ZONE,
+    DEFAULT_NOTIFY_ON_NO_WATER_NEEDED,
     CONF_NOTIFY_TITLE,
     DEFAULT_NOTIFY_TITLE,
     CONF_TARGET_MOISTURE,
@@ -242,9 +258,36 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
     async def async_step_settings(self, user_input=None):
         if user_input is not None:
             self._data.update(user_input)
-            return self.async_create_entry(title="", data=self._data)
+            return await self.async_step_notifications()
 
         return self.async_show_form(
             step_id="settings",
             data_schema=_settings_schema(self._data),
+        )
+
+    async def async_step_notifications(self, user_input=None):
+        if user_input is not None:
+            self._data.update(user_input)
+            return self.async_create_entry(title="", data=self._data)
+
+        return self.async_show_form(
+            step_id="notifications",
+            data_schema=vol.Schema({
+                vol.Required(CONF_NOTIFY_ON_START, default=self._data.get(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START)):
+                    BooleanSelector(),
+                vol.Required(CONF_NOTIFY_ON_FINISH, default=self._data.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)):
+                    BooleanSelector(),
+                vol.Required(CONF_NOTIFY_ON_BLOCK_PAUSE, default=self._data.get(CONF_NOTIFY_ON_BLOCK_PAUSE, DEFAULT_NOTIFY_ON_BLOCK_PAUSE)):
+                    BooleanSelector(),
+                vol.Required(CONF_NOTIFY_ON_STOP, default=self._data.get(CONF_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_STOP)):
+                    BooleanSelector(),
+                vol.Required(CONF_NOTIFY_ON_WIND, default=self._data.get(CONF_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WIND)):
+                    BooleanSelector(),
+                vol.Required(CONF_NOTIFY_ON_WATER_LEVEL, default=self._data.get(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL)):
+                    BooleanSelector(),
+                vol.Required(CONF_NOTIFY_ON_NEXT_ZONE, default=self._data.get(CONF_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NEXT_ZONE)):
+                    BooleanSelector(),
+                vol.Required(CONF_NOTIFY_ON_NO_WATER_NEEDED, default=self._data.get(CONF_NOTIFY_ON_NO_WATER_NEEDED, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED)):
+                    BooleanSelector(),
+            }),
         )
