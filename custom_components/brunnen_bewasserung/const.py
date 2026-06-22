@@ -66,3 +66,21 @@ CONF_WIND_SPEED_LIMIT = "wind_speed_limit"
 CONF_WIND_GUST_LIMIT = "wind_gust_limit"
 CONF_SOLAR_THRESHOLD = "solar_threshold"
 CONF_EARLIEST_START = "earliest_start"
+# Benachrichtigungs-Einstellungen
+CONF_NOTIFY_ON_START = "notify_on_start"
+CONF_NOTIFY_ON_FINISH = "notify_on_finish"
+CONF_NOTIFY_ON_BLOCK_PAUSE = "notify_on_block_pause"
+CONF_NOTIFY_ON_STOP = "notify_on_stop"
+CONF_NOTIFY_ON_WIND = "notify_on_wind"
+CONF_NOTIFY_ON_WATER_LEVEL = "notify_on_water_level"
+CONF_NOTIFY_ON_NEXT_ZONE = "notify_on_next_zone"
+CONF_NOTIFY_ON_NO_WATER_NEEDED = "notify_on_no_water_needed"
+
+DEFAULT_NOTIFY_ON_START = True
+DEFAULT_NOTIFY_ON_FINISH = True
+DEFAULT_NOTIFY_ON_BLOCK_PAUSE = True
+DEFAULT_NOTIFY_ON_STOP = True
+DEFAULT_NOTIFY_ON_WIND = True
+DEFAULT_NOTIFY_ON_WATER_LEVEL = True
+DEFAULT_NOTIFY_ON_NEXT_ZONE = True
+DEFAULT_NOTIFY_ON_NO_WATER_NEEDED = False
