@@ -32,6 +32,8 @@ from .const import (
     CONF_WATER_LEVEL_LOW,
     CONF_WATER_LEVEL_HIGH,
     CONF_WATER_LEVEL_TIMEOUT,
+    CONF_MIN_REMAINDER_BLOCK,
+    DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_ON_START,
     CONF_NOTIFY_ON_FINISH,
@@ -99,6 +101,8 @@ def _settings_schema(defaults: dict) -> vol.Schema:
             NumberSelector(NumberSelectorConfig(min=50, max=1000, step=10, unit_of_measurement="W/m²", mode=NumberSelectorMode.BOX)),
         vol.Required(CONF_EARLIEST_START, default=defaults.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START)):
             TimeSelector(),
+        vol.Required(CONF_MIN_REMAINDER_BLOCK, default=defaults.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)):
+            NumberSelector(NumberSelectorConfig(min=0, max=30, step=0.5, unit_of_measurement="min", mode=NumberSelectorMode.BOX)),
         vol.Optional(CONF_NOTIFY_SERVICE):
             EntitySelector(EntitySelectorConfig(domain=["notify", "script"])),
         vol.Optional(CONF_NOTIFY_TITLE, default=defaults.get(CONF_NOTIFY_TITLE, DEFAULT_NOTIFY_TITLE)):
