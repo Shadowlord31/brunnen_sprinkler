@@ -172,15 +172,11 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._remaining_s = 0.0
         self._block_remaining_s = 0.0
         self._current_block = 0
-        # _last_run aus persistentem Storage laden
+        # _last_run aus persistentem Storage laden (im Executor - nicht blockierend)
         try:
-            import json, os
-            path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
-            if os.path.exists(path):
-                with open(path) as f:
-                    data = json.load(f)
-                if "last_run" in data:
-                    self._last_run = date.fromisoformat(data["last_run"])
+            last_run_str = await self.hass.async_add_executor_job(self._load_last_run_sync)
+            if last_run_str:
+                self._last_run = date.fromisoformat(last_run_str)
         except Exception:
             self._last_run = None
 
@@ -465,6 +461,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     async def _async_save_last_run(self, iso_date: str) -> None:
         """Speichert _last_run persistent als JSON."""
         await self.hass.async_add_executor_job(self._save_last_run_sync, iso_date)
+
+    def _load_last_run_sync(self) -> str | None:
+        import json, os
+        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
+        if os.path.exists(path):
+            with open(path) as f:
+                return json.load(f).get("last_run")
+        return None
 
     def _save_last_run_sync(self, iso_date: str) -> None:
         import json, os
