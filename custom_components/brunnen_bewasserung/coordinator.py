@@ -207,9 +207,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         runtime_s = self._calculate_runtime()
         if runtime_s <= 0:
-            if self._should_notify(CONF_NOTIFY_ON_NO_WATER_NEEDED, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED):
-                await self._async_notify(message="Bodenfeuchte bereits ausreichend – keine Bewässerung nötig.")
-            return False
+            if force:
+                # Manueller Start: Mindestwert verwenden
+                opts = self.options
+                runtime_s = float(opts.get(CONF_MIN_RUNTIME, DEFAULT_MIN_RUNTIME)) * 60
+            else:
+                if self._should_notify(CONF_NOTIFY_ON_NO_WATER_NEEDED, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED):
+                    await self._async_notify(message="Bodenfeuchte bereits ausreichend – keine Bewässerung nötig.")
+                return False
 
         if not force and self._last_run == date.today():
             return False
