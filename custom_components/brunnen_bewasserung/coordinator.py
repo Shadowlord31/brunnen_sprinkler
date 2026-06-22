@@ -166,6 +166,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     # --- Setup / Teardown ---
 
     async def async_setup(self) -> bool:
+        # Sauberer Start: Pumpe ausschalten und State auf idle setzen
+        await self._async_pump_off()
+        self._state = STATE_IDLE
+        self._enabled = False
+        self._remaining_s = 0.0
+        self._block_remaining_s = 0.0
+        self._current_block = 0
+
         opts = self.options
         self._pause_mode = "sensor" if self._has_water_level_sensor() else "time"
 
