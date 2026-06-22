@@ -370,15 +370,17 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     async def _async_pump_on(self) -> None:
         pump = self.options.get(CONF_PUMP_SWITCH)
         if pump:
+            domain = pump.split(".")[0]
             await self.hass.services.async_call(
-                "switch", "turn_on", {"entity_id": pump}, blocking=True
+                domain, "turn_on", {"entity_id": pump}, blocking=True
             )
 
     async def _async_pump_off(self) -> None:
         pump = self.options.get(CONF_PUMP_SWITCH)
         if pump:
+            domain = pump.split(".")[0]
             await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": pump}, blocking=True
+                domain, "turn_off", {"entity_id": pump}, blocking=True
             )
 
     # --- Notify ---
