@@ -19,6 +19,8 @@ from .const import (
     DOMAIN,
     CONF_INSTANCE_NAME,
     CONF_PUMP_SWITCH,
+    CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_TITLE,
     CONF_MOISTURE_SENSOR,
     CONF_SOLAR_SENSOR,
     CONF_WIND_SPEED_SENSOR,
@@ -385,37 +387,29 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     # --- Notify ---
 
-    async def _async_notify(self, message: str, title: str | None = None) -> None:
+    async def _async_notify(self, title: str = None, message: str = "") -> None:
+        opts = self.options
+        instance_name = opts.get(CONF_INSTANCE_NAME, "Brunnen Bewässerung")
         if title is None:
-            instance = self.options.get(CONF_INSTANCE_NAME, "Brunnen Bewässerung")
-            title = f"Brunnen Bewässerung – {instance}"
+            title = opts.get(CONF_NOTIFY_TITLE) or instance_name
+
+        notify_service = opts.get(CONF_NOTIFY_SERVICE, "")
+        if not notify_service:
+            return
 
         try:
-            if self.hass.services.has_service("script", "master_notify_v1_1_0"):
-                await self.hass.services.async_call(
-                    "script",
-                    "master_notify_v1_1_0",
-                    {
-                        "title": title,
-                        "message": message,
-                        "group_admins_enable": True,
-                        "group_family_enable": True,
-                        "alexa_enabled": False,
-                        "google_enabled": False,
-                        "critical_enabled": False,
-                    },
-                    blocking=False,
-                )
-                return
+            parts = notify_service.split(".")
+            domain = parts[0]
+            service = ".".join(parts[1:]) if len(parts) > 1 else "send_message"
+            await self.hass.services.async_call(
+                domain, service,
+                {"title": title, "message": message},
+                blocking=False,
+            )
         except Exception:
-            pass
-
-        self.hass.components.persistent_notification.async_create(
-            message, title=title
-        )
-
-    # --- Calculations ---
-
+            self.hass.components.persistent_notification.async_create(
+                message, title=title
+            )
     def _calculate_runtime(self) -> float:
         opts = self.options
         moisture_sensor = opts.get(CONF_MOISTURE_SENSOR)
