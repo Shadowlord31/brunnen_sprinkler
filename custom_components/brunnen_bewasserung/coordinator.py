@@ -294,12 +294,19 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         opts = self.options
         pause_s = opts.get(CONF_PAUSE_DURATION, DEFAULT_PAUSE_DURATION) * 60
         self._state = STATE_PAUSING
+        self._block_remaining_s = pause_s
         self.async_update_listeners()
         await self._async_notify(
             message=f"Block {self._current_block}/{self._total_blocks} beendet. "
                     f"Pause {int(pause_s // 60)} Min. Restzeit: {self._remaining_s / 60:.0f} Min."
         )
-        await asyncio.sleep(pause_s)
+        step = 1.0
+        elapsed = 0.0
+        while elapsed < pause_s:
+            await asyncio.sleep(step)
+            elapsed += step
+            self._block_remaining_s = max(0.0, pause_s - elapsed)
+            self.async_update_listeners()
 
     async def _async_run_pause_sensor(self) -> None:
         opts = self.options
