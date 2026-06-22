@@ -20,6 +20,12 @@ from .const import (
     CONF_INSTANCE_NAME,
     CONF_PUMP_SWITCH,
     CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_ON_START, CONF_NOTIFY_ON_FINISH, CONF_NOTIFY_ON_BLOCK_PAUSE,
+    CONF_NOTIFY_ON_STOP, CONF_NOTIFY_ON_WIND, CONF_NOTIFY_ON_WATER_LEVEL,
+    CONF_NOTIFY_ON_NEXT_ZONE, CONF_NOTIFY_ON_NO_WATER_NEEDED,
+    DEFAULT_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_BLOCK_PAUSE,
+    DEFAULT_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WATER_LEVEL,
+    DEFAULT_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED,
     CONF_NOTIFY_TITLE,
     CONF_MOISTURE_SENSOR,
     CONF_SOLAR_SENSOR,
@@ -201,6 +207,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         runtime_s = self._calculate_runtime()
         if runtime_s <= 0:
+            if self._should_notify(CONF_NOTIFY_ON_NO_WATER_NEEDED, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED):
             await self._async_notify(message="Bodenfeuchte bereits ausreichend – keine Bewässerung nötig.")
             return False
 
@@ -217,9 +224,15 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._watering_task = self.hass.async_create_task(
             self._async_run_watering_cycle(block_s)
         )
+        if self._should_notify(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START):
+            runtime_min = round(runtime_s / 60, 1)
+            await self._async_notify(
+                message=f"Bewässerung gestartet. Laufzeit: {runtime_min} Min in {self._total_blocks} Block(s)."
+            )
         return True
 
     async def async_stop_watering(self) -> None:
+        was_active = self._state != STATE_IDLE
         if self._tick_task:
             self._tick_task.cancel()
             self._tick_task = None
@@ -228,6 +241,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self._watering_task = None
         await self._async_pump_off()
         self._state = STATE_IDLE
+        if was_active and self._should_notify(CONF_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_STOP):
+            await self._async_notify(message="Bewässerung manuell abgebrochen.")
         self._remaining_s = 0.0
         self._block_remaining_s = 0.0
         self._current_block = 0
@@ -259,7 +274,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     self._state = STATE_IDLE
                     self._current_block = 0
                     self.async_update_listeners()
-                    await self._async_notify(message="Bewässerung abgeschlossen.")
+                    if self._should_notify(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH):
+                        await self._async_notify(message="Bewässerung vollständig abgeschlossen.")
                     await self._async_trigger_next_zone()
                     break
 
@@ -296,10 +312,11 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._state = STATE_PAUSING
         self._block_remaining_s = pause_s
         self.async_update_listeners()
-        await self._async_notify(
-            message=f"Block {self._current_block}/{self._total_blocks} beendet. "
-                    f"Pause {int(pause_s // 60)} Min. Restzeit: {self._remaining_s / 60:.0f} Min."
-        )
+        if self._should_notify(CONF_NOTIFY_ON_BLOCK_PAUSE, DEFAULT_NOTIFY_ON_BLOCK_PAUSE):
+            await self._async_notify(
+                message=f"Block {self._current_block}/{self._total_blocks} beendet. "
+                        f"Pause {int(pause_s // 60)} Min. Restzeit: {self._remaining_s / 60:.0f} Min."
+            )
         step = 1.0
         elapsed = 0.0
         while elapsed < pause_s:
@@ -317,9 +334,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         self._state = STATE_WAITING_WATER
         self.async_update_listeners()
-        await self._async_notify(
-            message=f"Wasserstand niedrig. Warte auf Erholung (Ziel: >{high}%)."
-        )
+        if self._should_notify(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL):
+            await self._async_notify(
+                message=f"Wasserstand niedrig. Warte auf Erholung (Ziel: >{high}%)."
+            )
 
         start = datetime.now()
         while True:
@@ -330,15 +348,17 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 level = 0.0
 
             if level >= high:
-                await self._async_notify(
-                    message=f"Wasserstand erholt ({level:.0f}%). Weiter mit nächstem Block."
-                )
+                if self._should_notify(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL):
+                    await self._async_notify(
+                        message=f"Wasserstand erholt ({level:.0f}%). Weiter mit nächstem Block."
+                    )
                 break
 
             if (datetime.now() - start).total_seconds() >= timeout_s:
-                await self._async_notify(
-                    message="Timeout: Wasserstand nicht erholt. Bewässerung abgebrochen."
-                )
+                if self._should_notify(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL):
+                    await self._async_notify(
+                        message="Timeout: Wasserstand nicht erholt. Bewässerung abgebrochen."
+                    )
                 await self.async_stop_watering()
                 return
 
@@ -348,9 +368,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         next_coord = self._get_next_zone_coordinator()
         if next_coord and next_coord._state == STATE_IDLE:
             instance = self.options.get(CONF_INSTANCE_NAME, "")
-            await self._async_notify(
-                message=f"Zone '{instance}' fertig. Starte nächste Zone."
-            )
+            if self._should_notify(CONF_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NEXT_ZONE):
+                await self._async_notify(
+                    message=f"Zone '{instance}' fertig. Starte nächste Zone."
+                )
             await next_coord.async_start_watering(force=True)
 
     # --- Wind ---
@@ -371,15 +392,17 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if self._state == STATE_WATERING and (speed > speed_limit or gust > gust_limit):
             self._state = STATE_WIND_HOLD
             await self._async_pump_off()
-            await self._async_notify(
-                message=f"Wind-Pause: {speed:.1f} km/h / Böe {gust:.1f} km/h"
-            )
+            if self._should_notify(CONF_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WIND):
+                await self._async_notify(
+                    message=f"Wind-Pause: {speed:.1f} km/h / Böe {gust:.1f} km/h"
+                )
             self.async_update_listeners()
 
         elif self._state == STATE_WIND_HOLD and speed <= speed_limit and gust <= gust_limit:
             self._state = STATE_WATERING
             await self._async_pump_on()
-            await self._async_notify(message="Wind nachgelassen. Bewässerung fortgesetzt.")
+            if self._should_notify(CONF_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WIND):
+                await self._async_notify(message="Wind nachgelassen. Bewässerung fortgesetzt.")
             self.async_update_listeners()
 
     async def _async_water_level_changed(self, _event) -> None:
@@ -421,6 +444,9 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             )
 
     # --- Notify ---
+
+    def _should_notify(self, flag_key: str, default: bool = True) -> bool:
+        return bool(self.options.get(flag_key, default))
 
     async def _async_notify(self, title: str = None, message: str = "") -> None:
         opts = self.options
