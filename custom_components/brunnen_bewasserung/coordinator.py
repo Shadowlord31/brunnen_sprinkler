@@ -74,6 +74,12 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name=DOMAIN)
         self._config_entry = config_entry
         self._state: str = STATE_IDLE
+        self._block_start_time: float = 0.0
+        self._current_block_s: float = 0.0
+        self._tick_task: asyncio.Task | None = None
+        self._block_start_time: float = 0.0
+        self._current_block_s: float = 0.0
+        self._tick_task: asyncio.Task | None = None
         self._remaining_s: float = 0.0
         self._block_remaining_s: float = 0.0
         self._current_block: int = 0
@@ -112,6 +118,24 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     @property
     def last_run(self) -> date | None:
         return self._last_run
+
+    @property
+    def block_remaining_s(self) -> float:
+        """Verbleibende Sekunden im aktuellen Block - live berechnet."""
+        if self._state == STATE_WATERING and self._block_start_time > 0:
+            elapsed = asyncio.get_event_loop().time() - self._block_start_time
+            remaining = self._current_block_s - elapsed
+            return max(0.0, remaining)
+        return 0.0
+
+    @property
+    def block_remaining_s(self) -> float:
+        """Verbleibende Sekunden im aktuellen Block - live berechnet."""
+        if self._state == STATE_WATERING and self._block_start_time > 0:
+            elapsed = asyncio.get_event_loop().time() - self._block_start_time
+            remaining = self._current_block_s - elapsed
+            return max(0.0, remaining)
+        return 0.0
 
     @property
     def auto_mode(self) -> bool:
@@ -196,6 +220,9 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         return True
 
     async def async_stop_watering(self) -> None:
+        if self._tick_task:
+            self._tick_task.cancel()
+            self._tick_task = None
         if self._watering_task:
             self._watering_task.cancel()
             self._watering_task = None
@@ -261,6 +288,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             await asyncio.sleep(step)
             elapsed += step
             self._block_remaining_s = max(0.0, duration_s - elapsed)
+            self.async_update_listeners()
 
     async def _async_run_pause_time(self) -> None:
         opts = self.options
