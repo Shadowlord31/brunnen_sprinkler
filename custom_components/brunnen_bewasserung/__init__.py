@@ -7,7 +7,7 @@ from .const import DOMAIN
 from .coordinator import BrunnenBewasserungCoordinator
 from .services import async_register_services
 
-PLATFORMS = ["sensor", "binary_sensor", "switch", "number", "time"]
+PLATFORMS = ["sensor", "binary_sensor", "switch", "number", "time", "button"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
