@@ -166,13 +166,22 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     # --- Setup / Teardown ---
 
     async def async_setup(self) -> bool:
-        # Sauberer Start: Pumpe ausschalten und State auf idle setzen
+        # Pumpe sicherheitshalber ausschalten, aber _enabled/Switch-State beibehalten
         await self._async_pump_off()
         self._state = STATE_IDLE
-        self._enabled = False
         self._remaining_s = 0.0
         self._block_remaining_s = 0.0
         self._current_block = 0
+        # _last_run aus persistentem Storage laden
+        stored = await self.hass.async_add_executor_job(
+            self._load_last_run
+        )
+        if stored:
+            from datetime import date as _date
+            try:
+                self._last_run = _date.fromisoformat(stored)
+            except ValueError:
+                self._last_run = None
 
         opts = self.options
         self._pause_mode = "sensor" if self._has_water_level_sensor() else "time"
@@ -234,7 +243,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._total_blocks = ceil(runtime_s / block_s)
         self._current_block = 1
         self._remaining_s = runtime_s - block_s
-        self._last_run = date.today()
         self._watering_task = self.hass.async_create_task(
             self._async_run_watering_cycle(block_s)
         )
@@ -287,6 +295,11 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 if self._remaining_s <= 0:
                     self._state = STATE_IDLE
                     self._current_block = 0
+                    # Erst jetzt als "heute gegossen" markieren
+                    self._last_run = date.today()
+                    await self.hass.async_add_executor_job(
+                        self._save_last_run, self._last_run.isoformat()
+                    )
                     self.async_update_listeners()
                     if self._should_notify(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH):
                         await self._async_notify(message="Bewässerung vollständig abgeschlossen.")
@@ -449,6 +462,31 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             await self.async_start_watering()
 
     # --- Pump helpers ---
+
+    def _save_last_run(self, iso_date: str) -> None:
+        """Speichert _last_run persistent in .storage."""
+        import json, os
+        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
+        with open(path, "w") as f:
+            json.dump({"last_run": iso_date}, f)
+
+    def _load_last_run(self) -> str | None:
+        """Lädt _last_run aus .storage."""
+        import json, os
+        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
+        if os.path.exists(path):
+            with open(path) as f:
+                return json.load(f).get("last_run")
+        return None
+
+    def reset_last_run(self) -> None:
+        """Setzt _last_run zurück (für Reset-Button)."""
+        import os
+        self._last_run = None
+        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
+        if os.path.exists(path):
+            os.remove(path)
+        self.async_update_listeners()
 
     async def _async_pump_on(self) -> None:
         pump = self.options.get(CONF_PUMP_SWITCH)
