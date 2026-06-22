@@ -1,9 +1,9 @@
 {
   "domain": "brunnen_bewasserung",
   "name": "Brunnen Bewässerung",
-  "version": "1.0.0",
-  "documentation": "https://github.com/Shadowlord31/brunnen-bewasserung",
-  "issue_tracker": "https://github.com/Shadowlord31/brunnen-bewasserung/issues",
+  "version": "1.2.7",
+  "documentation": "https://github.com/Shadowlord31/brunnen_sprinkler",
+  "issue_tracker": "https://github.com/Shadowlord31/brunnen_sprinkler/issues",
   "requirements": [],
   "dependencies": [],
   "codeowners": ["@Shadowlord31"],
