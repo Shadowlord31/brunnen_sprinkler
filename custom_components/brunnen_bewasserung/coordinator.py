@@ -296,6 +296,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 self._current_block += 1
                 next_block_s = min(self._remaining_s, block_duration_s)
                 self._remaining_s -= next_block_s
+
+                # Restzeit zu klein für eigenen Block (< 2 Min)?
+                # Auf aktuellen Block draufrechnen statt Mini-Block
+                MIN_BLOCK_S = 120.0
+                if 0 < self._remaining_s < MIN_BLOCK_S:
+                    next_block_s += self._remaining_s
+                    self._remaining_s = 0.0
+
                 current_block_s = next_block_s
 
         except asyncio.CancelledError:
