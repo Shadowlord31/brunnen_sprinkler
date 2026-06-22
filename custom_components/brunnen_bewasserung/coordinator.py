@@ -175,7 +175,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._current_block = 0
         # _last_run aus persistentem Storage laden (HA Store API)
         try:
-            store = Store(1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
+            store = Store(self.hass, 1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
             data = await store.async_load()
             if data and "last_run" in data:
                 self._last_run = date.fromisoformat(data["last_run"])
@@ -462,13 +462,13 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     async def _async_save_last_run(self, iso_date: str) -> None:
         """Speichert _last_run persistent via HA Store API."""
-        store = Store(1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
+        store = Store(self.hass, 1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
         await store.async_save({"last_run": iso_date})
 
     async def async_reset_last_run(self) -> None:
         """Setzt _last_run zurück (für Reset-Button)."""
         self._last_run = None
-        store = Store(1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
+        store = Store(self.hass, 1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
         await store.async_remove()
         self.async_update_listeners()
 
