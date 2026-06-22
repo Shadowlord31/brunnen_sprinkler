@@ -79,11 +79,11 @@ class BrunnenEnabledSwitch(_BrunnenSwitchBase):
         return self.coordinator.enabled
 
     async def async_turn_on(self, **kwargs) -> None:
+        self.coordinator._enabled = True
         if not self.coordinator._auto_mode:
             # Manuell-Modus: sofortiger Start
             await self.coordinator.async_start_watering(force=True)
         else:
-            self.coordinator._enabled = True
             self.coordinator.async_update_listeners()
 
     async def async_turn_off(self, **kwargs) -> None:
