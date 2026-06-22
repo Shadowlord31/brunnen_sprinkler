@@ -172,16 +172,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._remaining_s = 0.0
         self._block_remaining_s = 0.0
         self._current_block = 0
-        # _last_run aus persistentem Storage laden
-        stored = await self.hass.async_add_executor_job(
-            self._load_last_run
-        )
-        if stored:
-            from datetime import date as _date
-            try:
-                self._last_run = _date.fromisoformat(stored)
-            except ValueError:
-                self._last_run = None
+        # _last_run aus persistentem Storage laden (HA Store API)
+        try:
+            store = self.hass.helpers.storage.Store(1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
+            data = await store.async_load()
+            if data and "last_run" in data:
+                self._last_run = date.fromisoformat(data["last_run"])
+        except Exception:
+            self._last_run = None
 
         opts = self.options
         self._pause_mode = "sensor" if self._has_water_level_sensor() else "time"
@@ -297,9 +295,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     self._current_block = 0
                     # Erst jetzt als "heute gegossen" markieren
                     self._last_run = date.today()
-                    await self.hass.async_add_executor_job(
-                        self._save_last_run, self._last_run.isoformat()
-                    )
+                    await self._async_save_last_run(self._last_run.isoformat())
                     self.async_update_listeners()
                     if self._should_notify(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH):
                         await self._async_notify(message="Bewässerung vollständig abgeschlossen.")
@@ -463,29 +459,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     # --- Pump helpers ---
 
-    def _save_last_run(self, iso_date: str) -> None:
-        """Speichert _last_run persistent in .storage."""
-        import json, os
-        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
-        with open(path, "w") as f:
-            json.dump({"last_run": iso_date}, f)
+    async def _async_save_last_run(self, iso_date: str) -> None:
+        """Speichert _last_run persistent via HA Store API."""
+        store = self.hass.helpers.storage.Store(1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
+        await store.async_save({"last_run": iso_date})
 
-    def _load_last_run(self) -> str | None:
-        """Lädt _last_run aus .storage."""
-        import json, os
-        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
-        if os.path.exists(path):
-            with open(path) as f:
-                return json.load(f).get("last_run")
-        return None
-
-    def reset_last_run(self) -> None:
+    async def async_reset_last_run(self) -> None:
         """Setzt _last_run zurück (für Reset-Button)."""
-        import os
         self._last_run = None
-        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
-        if os.path.exists(path):
-            os.remove(path)
+        store = self.hass.helpers.storage.Store(1, f"brunnen_bewasserung_{self._config_entry.entry_id}")
+        await store.async_remove()
         self.async_update_listeners()
 
     async def _async_pump_on(self) -> None:
