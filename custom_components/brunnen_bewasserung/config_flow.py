@@ -99,7 +99,7 @@ def _optional_sensors_schema(hass, defaults: dict, own_entry_id: str | None = No
     ]
 
     return vol.Schema({
-        vol.Optional(CONF_NEXT_ZONE_ENTRY_ID, default=defaults.get(CONF_NEXT_ZONE_ENTRY_ID, "")):
+        vol.Optional(CONF_NEXT_ZONE_ENTRY_ID):
             SelectSelector(SelectSelectorConfig(options=next_zone_options, mode=SelectSelectorMode.DROPDOWN)),
         vol.Optional(CONF_WATER_LEVEL_SENSOR):
             EntitySelector(EntitySelectorConfig(domain="sensor")),
