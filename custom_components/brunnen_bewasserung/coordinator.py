@@ -468,10 +468,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         try:
             parts = notify_service.split(".")
             domain = parts[0]
-            service = ".".join(parts[1:]) if len(parts) > 1 else "send_message"
+            service_name = ".".join(parts[1:]) if len(parts) > 1 else ""
 
-            # Script-Domain: master_notify braucht Extra-Felder
             if domain == "script":
+                # Script-Domain: master_notify braucht Extra-Felder
                 data = {
                     "title": title,
                     "message": message,
@@ -481,12 +481,23 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     "google_enabled": False,
                     "critical_enabled": False,
                 }
+                await self.hass.services.async_call(
+                    domain, service_name, data, blocking=False,
+                )
+            elif domain == "notify":
+                # Seit HA 2024.x: notify-Entities nutzen notify.send_message mit entity_id
+                await self.hass.services.async_call(
+                    "notify", "send_message",
+                    {"entity_id": notify_service, "message": message, "title": title},
+                    blocking=False,
+                )
             else:
-                data = {"title": title, "message": message}
-
-            await self.hass.services.async_call(
-                domain, service, data, blocking=False,
-            )
+                # Andere Domains direkt aufrufen
+                await self.hass.services.async_call(
+                    domain, service_name,
+                    {"title": title, "message": message},
+                    blocking=False,
+                )
         except Exception as e:
             _LOGGER.error("Brunnen Bewässerung Notify Fehler: %s", e)
             self.hass.async_create_task(
