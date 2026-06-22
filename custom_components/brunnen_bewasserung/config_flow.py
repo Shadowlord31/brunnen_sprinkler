@@ -137,7 +137,7 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_INSTANCE_NAME, default="Garten"):
                     TextSelector(),
                 vol.Required(CONF_PUMP_SWITCH):
-                    EntitySelector(EntitySelectorConfig(domain="switch")),
+                    EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
                 vol.Required(CONF_MOISTURE_SENSOR):
                     EntitySelector(EntitySelectorConfig(domain="sensor")),
                 vol.Required(CONF_SOLAR_SENSOR):
