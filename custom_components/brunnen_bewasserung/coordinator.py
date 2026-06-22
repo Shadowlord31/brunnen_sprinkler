@@ -20,6 +20,7 @@ from .const import (
     CONF_INSTANCE_NAME,
     CONF_PUMP_SWITCH,
     CONF_NOTIFY_SERVICE,
+    CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_NOTIFY_ON_START, CONF_NOTIFY_ON_FINISH, CONF_NOTIFY_ON_BLOCK_PAUSE,
     CONF_NOTIFY_ON_STOP, CONF_NOTIFY_ON_WIND, CONF_NOTIFY_ON_WATER_LEVEL,
     CONF_NOTIFY_ON_NEXT_ZONE, CONF_NOTIFY_ON_NO_WATER_NEEDED,
@@ -297,9 +298,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 next_block_s = min(self._remaining_s, block_duration_s)
                 self._remaining_s -= next_block_s
 
-                # Restzeit zu klein für eigenen Block (< 2 Min)?
+                # Restzeit zu klein für eigenen Block?
                 # Auf aktuellen Block draufrechnen statt Mini-Block
-                MIN_BLOCK_S = 120.0
+                opts = self.options
+                MIN_BLOCK_S = float(opts.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)) * 60
                 if 0 < self._remaining_s < MIN_BLOCK_S:
                     next_block_s += self._remaining_s
                     self._remaining_s = 0.0
