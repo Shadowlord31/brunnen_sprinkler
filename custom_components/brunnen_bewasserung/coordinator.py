@@ -96,6 +96,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._total_blocks: int = 0
         self._last_run: date | None = None
         self._mode: str = MODE_AUTO  # MODE_AUTO | MODE_CHAIN | MODE_MANUAL
+        self._enabled: bool = True  # Aktivierungs-Schalter: darf Automatik starten?
         self._pause_mode: str = "time"
         self._watering_task: asyncio.Task | None = None
         self._water_level_unsub: Callable | None = None
@@ -156,6 +157,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     @property
     def enabled(self) -> bool:
+        return self._enabled
+
+    @property
+    def enabled(self) -> bool:
         return self._mode != MODE_MANUAL or self._state == STATE_WATERING
 
     @property
@@ -182,7 +187,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._mode = self.options.get(CONF_MODE, DEFAULT_MODE)
         # _last_run aus persistentem Storage laden (im Executor - nicht blockierend)
         try:
-            last_run_str = await self.hass.async_add_executor_job(self._load_last_run_sync)
+            last_run_str, enabled = await self.hass.async_add_executor_job(self._load_state_sync)
+            self._enabled = enabled
             if last_run_str:
                 self._last_run = date.fromisoformat(last_run_str)
         except Exception:
@@ -414,6 +420,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             coord for coord in self.hass.data.get(DOMAIN, {}).values()
             if hasattr(coord, '_mode') and coord._mode == MODE_CHAIN
             and coord._state == STATE_IDLE
+            and getattr(coord, '_enabled', True)
             and coord is not self
         ]
         if not all_coordinators:
@@ -488,19 +495,31 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         """Speichert _last_run persistent als JSON."""
         await self.hass.async_add_executor_job(self._save_last_run_sync, iso_date)
 
-    def _load_last_run_sync(self) -> str | None:
+    def _load_state_sync(self) -> tuple[str | None, bool]:
         import json, os
         path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
         if os.path.exists(path):
-            with open(path) as f:
-                return json.load(f).get("last_run")
-        return None
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                return data.get("last_run"), data.get("enabled", True)
+            except Exception:
+                pass
+        return None, True
 
     def _save_last_run_sync(self, iso_date: str) -> None:
         import json, os
         path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        existing["last_run"] = iso_date
         with open(path, "w") as f:
-            json.dump({"last_run": iso_date}, f)
+            json.dump(existing, f)
 
     async def async_reset_last_run(self) -> None:
         """Setzt _last_run zurück (für Reset-Button)."""
@@ -513,6 +532,26 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
         if os.path.exists(path):
             os.remove(path)
+
+    async def async_set_enabled(self, enabled: bool) -> None:
+        """Setzt den Aktivierungs-Schalter und speichert ihn persistent."""
+        self._enabled = enabled
+        await self.hass.async_add_executor_job(self._save_enabled_sync, enabled)
+        self.async_update_listeners()
+
+    def _save_enabled_sync(self, enabled: bool) -> None:
+        import json, os
+        path = self.hass.config.path(".storage", f"brunnen_bewasserung_{self._config_entry.entry_id}.json")
+        existing = {}
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        existing["enabled"] = enabled
+        with open(path, "w") as f:
+            json.dump(existing, f)
 
     async def _async_pump_on(self) -> None:
         pump = self.options.get(CONF_PUMP_SWITCH)
@@ -614,6 +653,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     def _should_start_auto(self) -> bool:
         if self._state != STATE_IDLE:
+            return False
+        if not self._enabled:
             return False
         if self._mode != MODE_AUTO:
             return False
