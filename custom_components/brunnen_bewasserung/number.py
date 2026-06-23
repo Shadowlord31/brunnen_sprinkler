@@ -29,9 +29,45 @@ from .const import (
     DEFAULT_SOLAR_THRESHOLD,
     DEFAULT_WATER_LEVEL_LOW,
     DEFAULT_WATER_LEVEL_HIGH,
+    CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION,
+    CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION,
+    MODE_CHAIN, CONF_MODE,
 )
 from .coordinator import BrunnenBewasserungCoordinator
 
+
+
+
+class BrunnenManualDurationNumber(_BrunnenNumberBase):
+    """Konfigurierbare Laufzeit im Manuell-Modus."""
+    _attr_icon = "mdi:timer-play-outline"
+    _attr_native_min_value = 1.0
+    _attr_native_max_value = 120.0
+    _attr_native_step = 1.0
+    _attr_native_unit_of_measurement = "min"
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator, entry)
+        self._conf_key = CONF_MANUAL_DURATION
+        self._default = DEFAULT_MANUAL_DURATION
+        self._attr_unique_id = f"{entry.entry_id}_manual_duration"
+        self._attr_name = "Manuelle Laufzeit"
+
+
+class BrunnenChainPositionNumber(_BrunnenNumberBase):
+    """Kettenposition – bestimmt die Reihenfolge im Ketten-Modus."""
+    _attr_icon = "mdi:sort-numeric-ascending"
+    _attr_native_min_value = 1.0
+    _attr_native_max_value = 10.0
+    _attr_native_step = 1.0
+    _attr_native_unit_of_measurement = None
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator, entry)
+        self._conf_key = CONF_CHAIN_POSITION
+        self._default = DEFAULT_CHAIN_POSITION
+        self._attr_unique_id = f"{entry.entry_id}_chain_position"
+        self._attr_name = "Kettenposition"
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -49,6 +85,8 @@ async def async_setup_entry(
         BrunnenNumber(coordinator, entry, CONF_SOLAR_THRESHOLD, "Solar-Schwellwert", "W/m²", 50, 1000, 10, "mdi:weather-sunny", DEFAULT_SOLAR_THRESHOLD),
         BrunnenNumber(coordinator, entry, CONF_WATER_LEVEL_LOW, "Wasserstand Pumpe AUS", "%", 0, 100, 1, "mdi:water-minus", DEFAULT_WATER_LEVEL_LOW, entity_category=EntityCategory.CONFIG),
         BrunnenNumber(coordinator, entry, CONF_WATER_LEVEL_HIGH, "Wasserstand Pumpe AN", "%", 0, 100, 1, "mdi:water-plus", DEFAULT_WATER_LEVEL_HIGH, entity_category=EntityCategory.CONFIG),
+            BrunnenManualDurationNumber(coordinator, entry),
+        BrunnenChainPositionNumber(coordinator, entry),
     ])
 
 
