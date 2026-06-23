@@ -670,9 +670,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return "Wartet auf Brunnen"
         if self._state == STATE_WIND_HOLD:
             return "Wind-Pause"
-        if not self._enabled:
-            return "Deaktiviert"
-        if not self._auto_mode:
+        if not self.auto_mode:
             return "Manuell"
         if self._last_run == date.today():
             return "Heute schon gelaufen"
