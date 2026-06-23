@@ -34,6 +34,10 @@ from .const import (
     CONF_WATER_LEVEL_TIMEOUT,
     CONF_MIN_REMAINDER_BLOCK,
     DEFAULT_MIN_REMAINDER_BLOCK,
+    CONF_MODE, DEFAULT_MODE,
+    CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION,
+    CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION,
+    MODE_AUTO, MODE_CHAIN, MODE_MANUAL,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_ON_START,
     CONF_NOTIFY_ON_FINISH,
@@ -101,6 +105,15 @@ def _settings_schema(defaults: dict) -> vol.Schema:
             NumberSelector(NumberSelectorConfig(min=50, max=1000, step=10, unit_of_measurement="W/m²", mode=NumberSelectorMode.BOX)),
         vol.Required(CONF_EARLIEST_START, default=defaults.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START)):
             TimeSelector(),
+        vol.Required(CONF_MODE, default=defaults.get(CONF_MODE, DEFAULT_MODE)):
+            SelectSelector(SelectSelectorConfig(
+                options=[MODE_AUTO, MODE_CHAIN, MODE_MANUAL],
+                mode=SelectSelectorMode.DROPDOWN,
+            )),
+        vol.Required(CONF_CHAIN_POSITION, default=defaults.get(CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION)):
+            NumberSelector(NumberSelectorConfig(min=1, max=10, step=1, mode=NumberSelectorMode.BOX)),
+        vol.Required(CONF_MANUAL_DURATION, default=defaults.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)):
+            NumberSelector(NumberSelectorConfig(min=1, max=120, step=1, unit_of_measurement="min", mode=NumberSelectorMode.BOX)),
         vol.Required(CONF_MIN_REMAINDER_BLOCK, default=defaults.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)):
             NumberSelector(NumberSelectorConfig(min=0, max=30, step=0.5, unit_of_measurement="min", mode=NumberSelectorMode.BOX)),
         vol.Optional(CONF_NOTIFY_SERVICE):
@@ -115,10 +128,7 @@ def _optional_sensors_schema(hass, defaults: dict, own_entry_id: str | None = No
         e for e in hass.config_entries.async_entries(DOMAIN)
         if e.entry_id != own_entry_id
     ]
-    next_zone_options = [{"value": "", "label": "— keine —"}] + [
-        {"value": e.entry_id, "label": e.title} for e in other_entries
-    ]
-
+    
     return vol.Schema({
         vol.Optional(CONF_NEXT_ZONE_ENTRY_ID, default=defaults.get(CONF_NEXT_ZONE_ENTRY_ID) or ""):
             SelectSelector(SelectSelectorConfig(
