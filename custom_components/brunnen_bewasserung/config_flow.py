@@ -128,7 +128,11 @@ def _optional_sensors_schema(hass, defaults: dict, own_entry_id: str | None = No
         e for e in hass.config_entries.async_entries(DOMAIN)
         if e.entry_id != own_entry_id
     ]
-    
+    next_zone_options = [{"value": "", "label": "– keine –"}] + [
+        {"value": e.entry_id, "label": e.data.get("instance_name", e.entry_id)}
+        for e in other_entries
+    ]
+
     return vol.Schema({
         vol.Optional(CONF_NEXT_ZONE_ENTRY_ID, default=defaults.get(CONF_NEXT_ZONE_ENTRY_ID) or ""):
             SelectSelector(SelectSelectorConfig(
