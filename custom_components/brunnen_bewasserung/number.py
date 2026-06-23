@@ -36,60 +36,6 @@ from .const import (
 from .coordinator import BrunnenBewasserungCoordinator
 
 
-
-
-class BrunnenManualDurationNumber(_BrunnenNumberBase):
-    """Konfigurierbare Laufzeit im Manuell-Modus."""
-    _attr_icon = "mdi:timer-play-outline"
-    _attr_native_min_value = 1.0
-    _attr_native_max_value = 120.0
-    _attr_native_step = 1.0
-    _attr_native_unit_of_measurement = "min"
-
-    def __init__(self, coordinator, entry) -> None:
-        super().__init__(coordinator, entry)
-        self._conf_key = CONF_MANUAL_DURATION
-        self._default = DEFAULT_MANUAL_DURATION
-        self._attr_unique_id = f"{entry.entry_id}_manual_duration"
-        self._attr_name = "Manuelle Laufzeit"
-
-
-class BrunnenChainPositionNumber(_BrunnenNumberBase):
-    """Kettenposition – bestimmt die Reihenfolge im Ketten-Modus."""
-    _attr_icon = "mdi:sort-numeric-ascending"
-    _attr_native_min_value = 1.0
-    _attr_native_max_value = 10.0
-    _attr_native_step = 1.0
-    _attr_native_unit_of_measurement = None
-
-    def __init__(self, coordinator, entry) -> None:
-        super().__init__(coordinator, entry)
-        self._conf_key = CONF_CHAIN_POSITION
-        self._default = DEFAULT_CHAIN_POSITION
-        self._attr_unique_id = f"{entry.entry_id}_chain_position"
-        self._attr_name = "Kettenposition"
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
-        BrunnenNumber(coordinator, entry, CONF_TARGET_MOISTURE, "Ziel-Bodenfeuchte", "%", 10, 100, 1, "mdi:water-percent", DEFAULT_TARGET_MOISTURE),
-        BrunnenNumber(coordinator, entry, CONF_SECONDS_PER_PERCENT, "Sekunden pro Prozent", "s/%", 60, 600, 5, "mdi:timer-sand", DEFAULT_SECONDS_PER_PERCENT),
-        BrunnenNumber(coordinator, entry, CONF_MIN_RUNTIME, "Minimale Laufzeit", "min", 1, 30, 1, "mdi:timer-outline", DEFAULT_MIN_RUNTIME),
-        BrunnenNumber(coordinator, entry, CONF_MAX_RUNTIME, "Maximale Laufzeit", "min", 10, 180, 5, "mdi:timer-outline", DEFAULT_MAX_RUNTIME),
-        BrunnenNumber(coordinator, entry, CONF_BLOCK_DURATION, "Block-Dauer", "min", 5, 60, 1, "mdi:timer-play", DEFAULT_BLOCK_DURATION, entity_category=EntityCategory.CONFIG),
-        BrunnenNumber(coordinator, entry, CONF_PAUSE_DURATION, "Pause-Dauer", "min", 5, 60, 1, "mdi:timer-pause", DEFAULT_PAUSE_DURATION, entity_category=EntityCategory.CONFIG),
-        BrunnenNumber(coordinator, entry, CONF_SOLAR_THRESHOLD, "Solar-Schwellwert", "W/m²", 50, 1000, 10, "mdi:weather-sunny", DEFAULT_SOLAR_THRESHOLD),
-        BrunnenNumber(coordinator, entry, CONF_WATER_LEVEL_LOW, "Wasserstand Pumpe AUS", "%", 0, 100, 1, "mdi:water-minus", DEFAULT_WATER_LEVEL_LOW, entity_category=EntityCategory.CONFIG),
-        BrunnenNumber(coordinator, entry, CONF_WATER_LEVEL_HIGH, "Wasserstand Pumpe AN", "%", 0, 100, 1, "mdi:water-plus", DEFAULT_WATER_LEVEL_HIGH, entity_category=EntityCategory.CONFIG),
-            BrunnenManualDurationNumber(coordinator, entry),
-        BrunnenChainPositionNumber(coordinator, entry),
-    ])
-
-
 def _device_info(entry: ConfigEntry) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
@@ -144,3 +90,82 @@ class BrunnenNumber(CoordinatorEntity[BrunnenBewasserungCoordinator], NumberEnti
         new_options[self._conf_key] = value
         self.hass.config_entries.async_update_entry(self._entry, options=new_options)
         self.coordinator.async_update_listeners()
+
+
+class _BrunnenNumberBase(CoordinatorEntity[BrunnenBewasserungCoordinator], NumberEntity):
+    """Abstrakte Basisklasse fuer Number-Entities mit conf_key/default Pattern."""
+
+    _attr_mode = NumberMode.BOX
+    _conf_key: str
+    _default: float
+
+    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> float:
+        return float(self.coordinator.options.get(self._conf_key, self._default))
+
+    async def async_set_native_value(self, value: float) -> None:
+        new_options = dict(self._entry.options)
+        new_options[self._conf_key] = value
+        self.hass.config_entries.async_update_entry(self._entry, options=new_options)
+        self.coordinator.async_update_listeners()
+
+
+class BrunnenManualDurationNumber(_BrunnenNumberBase):
+    """Konfigurierbare Laufzeit im Manuell-Modus."""
+    _attr_icon = "mdi:timer-play-outline"
+    _attr_native_min_value = 1.0
+    _attr_native_max_value = 120.0
+    _attr_native_step = 1.0
+    _attr_native_unit_of_measurement = "min"
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator, entry)
+        self._conf_key = CONF_MANUAL_DURATION
+        self._default = DEFAULT_MANUAL_DURATION
+        self._attr_unique_id = f"{entry.entry_id}_manual_duration"
+        self._attr_name = "Manuelle Laufzeit"
+
+
+class BrunnenChainPositionNumber(_BrunnenNumberBase):
+    """Kettenposition - bestimmt die Reihenfolge im Ketten-Modus."""
+    _attr_icon = "mdi:sort-numeric-ascending"
+    _attr_native_min_value = 1.0
+    _attr_native_max_value = 10.0
+    _attr_native_step = 1.0
+    _attr_native_unit_of_measurement = None
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator, entry)
+        self._conf_key = CONF_CHAIN_POSITION
+        self._default = DEFAULT_CHAIN_POSITION
+        self._attr_unique_id = f"{entry.entry_id}_chain_position"
+        self._attr_name = "Kettenposition"
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([
+        BrunnenNumber(coordinator, entry, CONF_TARGET_MOISTURE, "Ziel-Bodenfeuchte", "%", 10, 100, 1, "mdi:water-percent", DEFAULT_TARGET_MOISTURE),
+        BrunnenNumber(coordinator, entry, CONF_SECONDS_PER_PERCENT, "Sekunden pro Prozent", "s/%", 60, 600, 5, "mdi:timer-sand", DEFAULT_SECONDS_PER_PERCENT),
+        BrunnenNumber(coordinator, entry, CONF_MIN_RUNTIME, "Minimale Laufzeit", "min", 1, 30, 1, "mdi:timer-outline", DEFAULT_MIN_RUNTIME),
+        BrunnenNumber(coordinator, entry, CONF_MAX_RUNTIME, "Maximale Laufzeit", "min", 10, 180, 5, "mdi:timer-outline", DEFAULT_MAX_RUNTIME),
+        BrunnenNumber(coordinator, entry, CONF_BLOCK_DURATION, "Block-Dauer", "min", 5, 60, 1, "mdi:timer-play", DEFAULT_BLOCK_DURATION, entity_category=EntityCategory.CONFIG),
+        BrunnenNumber(coordinator, entry, CONF_PAUSE_DURATION, "Pause-Dauer", "min", 5, 60, 1, "mdi:timer-pause", DEFAULT_PAUSE_DURATION, entity_category=EntityCategory.CONFIG),
+        BrunnenNumber(coordinator, entry, CONF_SOLAR_THRESHOLD, "Solar-Schwellwert", "W/m2", 50, 1000, 10, "mdi:weather-sunny", DEFAULT_SOLAR_THRESHOLD),
+        BrunnenNumber(coordinator, entry, CONF_WATER_LEVEL_LOW, "Wasserstand Pumpe AUS", "%", 0, 100, 1, "mdi:water-minus", DEFAULT_WATER_LEVEL_LOW, entity_category=EntityCategory.CONFIG),
+        BrunnenNumber(coordinator, entry, CONF_WATER_LEVEL_HIGH, "Wasserstand Pumpe AN", "%", 0, 100, 1, "mdi:water-plus", DEFAULT_WATER_LEVEL_HIGH, entity_category=EntityCategory.CONFIG),
+        BrunnenManualDurationNumber(coordinator, entry),
+        BrunnenChainPositionNumber(coordinator, entry),
+    ])
