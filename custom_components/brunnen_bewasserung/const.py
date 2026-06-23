@@ -87,3 +87,18 @@ DEFAULT_NOTIFY_ON_NO_WATER_NEEDED = False
 
 CONF_MIN_REMAINDER_BLOCK = "min_remainder_block"
 DEFAULT_MIN_REMAINDER_BLOCK = 2.0
+
+# Bewässerungsmodi
+MODE_AUTO = "Automatik"
+MODE_CHAIN = "Kette"
+MODE_MANUAL = "Manuell"
+CONF_MODE = "mode"
+DEFAULT_MODE = "Automatik"
+
+# Kette
+CONF_CHAIN_POSITION = "chain_position"
+DEFAULT_CHAIN_POSITION = 1
+
+# Manuelle Laufzeit
+CONF_MANUAL_DURATION = "manual_duration"
+DEFAULT_MANUAL_DURATION = 20.0
