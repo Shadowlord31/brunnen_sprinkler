@@ -19,6 +19,9 @@ from .const import (
     DOMAIN,
     CONF_INSTANCE_NAME,
     CONF_PUMP_SWITCH,
+    MODE_AUTO, MODE_CHAIN, MODE_MANUAL, CONF_MODE, DEFAULT_MODE,
+    CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION,
+    CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION,
     CONF_NOTIFY_SERVICE,
     CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_NOTIFY_ON_START, CONF_NOTIFY_ON_FINISH, CONF_NOTIFY_ON_BLOCK_PAUSE,
@@ -92,8 +95,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._current_block: int = 0
         self._total_blocks: int = 0
         self._last_run: date | None = None
-        self._auto_mode: bool = True
-        self._enabled: bool = True
+        self._mode: str = MODE_AUTO  # MODE_AUTO | MODE_CHAIN | MODE_MANUAL
         self._pause_mode: str = "time"
         self._watering_task: asyncio.Task | None = None
         self._water_level_unsub: Callable | None = None
@@ -145,12 +147,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         return 0.0
 
     @property
+    def mode(self) -> str:
+        return self._mode
+
+    @property
     def auto_mode(self) -> bool:
-        return self._auto_mode
+        return self._mode == MODE_AUTO
 
     @property
     def enabled(self) -> bool:
-        return self._enabled
+        return self._mode != MODE_MANUAL or self._state == STATE_WATERING
 
     @property
     def pause_mode(self) -> str:
@@ -166,12 +172,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     # --- Setup / Teardown ---
 
     async def async_setup(self) -> bool:
-        # Pumpe sicherheitshalber ausschalten, aber _enabled/Switch-State beibehalten
+        # Pumpe sicherheitshalber ausschalten beim Start
         await self._async_pump_off()
         self._state = STATE_IDLE
         self._remaining_s = 0.0
         self._block_remaining_s = 0.0
         self._current_block = 0
+        # Modus aus gespeicherter Config laden
+        self._mode = self.options.get(CONF_MODE, DEFAULT_MODE)
         # _last_run aus persistentem Storage laden (im Executor - nicht blockierend)
         try:
             last_run_str = await self.hass.async_add_executor_job(self._load_last_run_sync)
@@ -217,19 +225,23 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     async def async_start_watering(self, force: bool = False) -> bool:
         if self._state != STATE_IDLE:
             return False
-        if not self._enabled:
-            return False
+        if self._mode == MODE_CHAIN and not force:
+            return False  # Kette startet nur via force (getriggert von anderer Zone)
 
-        runtime_s = self._calculate_runtime()
-        if runtime_s <= 0:
-            if force:
-                # Manueller Start: Mindestwert verwenden
-                opts = self.options
-                runtime_s = float(opts.get(CONF_MIN_RUNTIME, DEFAULT_MIN_RUNTIME)) * 60
-            else:
-                if self._should_notify(CONF_NOTIFY_ON_NO_WATER_NEEDED, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED):
-                    await self._async_notify(message="Bodenfeuchte bereits ausreichend – keine Bewässerung nötig.")
-                return False
+        if self._mode == MODE_MANUAL:
+            # Manuell: immer feste konfigurierte Laufzeit
+            opts = self.options
+            runtime_s = float(opts.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)) * 60
+        else:
+            runtime_s = self._calculate_runtime()
+            if runtime_s <= 0:
+                if force:
+                    opts = self.options
+                    runtime_s = float(opts.get(CONF_MIN_RUNTIME, DEFAULT_MIN_RUNTIME)) * 60
+                else:
+                    if self._should_notify(CONF_NOTIFY_ON_NO_WATER_NEEDED, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED):
+                        await self._async_notify(message="Bodenfeuchte bereits ausreichend – keine Bewässerung nötig.")
+                    return False
 
         if not force and self._last_run == date.today():
             return False
@@ -396,14 +408,28 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             await asyncio.sleep(30)
 
     async def _async_trigger_next_zone(self) -> None:
-        next_coord = self._get_next_zone_coordinator()
-        if next_coord and next_coord._state == STATE_IDLE:
-            instance = self.options.get(CONF_INSTANCE_NAME, "")
-            if self._should_notify(CONF_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NEXT_ZONE):
-                await self._async_notify(
-                    message=f"Zone '{instance}' fertig. Starte nächste Zone."
-                )
-            await next_coord.async_start_watering(force=True)
+        """Startet die nächste Ketten-Zone nach Position sortiert."""
+        from .const import DOMAIN
+        all_coordinators = [
+            coord for coord in self.hass.data.get(DOMAIN, {}).values()
+            if hasattr(coord, '_mode') and coord._mode == MODE_CHAIN
+            and coord._state == STATE_IDLE
+            and coord is not self
+        ]
+        if not all_coordinators:
+            return
+        # Nach Kettenposition sortieren
+        all_coordinators.sort(
+            key=lambda c: int(c.options.get(CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION))
+        )
+        next_coord = all_coordinators[0]
+        instance = self.options.get(CONF_INSTANCE_NAME, "")
+        next_instance = next_coord.options.get(CONF_INSTANCE_NAME, "")
+        if self._should_notify(CONF_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NEXT_ZONE):
+            await self._async_notify(
+                message=f"Zone '{instance}' fertig. Starte '{next_instance}'."
+            )
+        await next_coord.async_start_watering(force=True)
 
     # --- Wind ---
 
@@ -589,9 +615,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     def _should_start_auto(self) -> bool:
         if self._state != STATE_IDLE:
             return False
-        if not self._auto_mode:
-            return False
-        if not self._enabled:
+        if self._mode != MODE_AUTO:
             return False
         if self._last_run == date.today():
             return False
