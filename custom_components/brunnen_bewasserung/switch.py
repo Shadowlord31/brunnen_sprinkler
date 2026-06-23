@@ -1,4 +1,4 @@
-"""Switch Platform für brunnen_bewasserung – nur noch Status-Indikator."""
+"""Switch Platform fuer brunnen_bewasserung – Aktivierungs-Schalter."""
 from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
@@ -8,7 +8,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, CONF_INSTANCE_NAME, STATE_IDLE
+from .const import DOMAIN, CONF_INSTANCE_NAME
 from .coordinator import BrunnenBewasserungCoordinator
 
 
@@ -26,13 +26,15 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([BrunnenActiveSwitch(coordinator, entry)])
+    async_add_entities([BrunnenEnabledSwitch(coordinator, entry)])
 
 
-class BrunnenActiveSwitch(CoordinatorEntity[BrunnenBewasserungCoordinator], SwitchEntity):
+class BrunnenEnabledSwitch(CoordinatorEntity[BrunnenBewasserungCoordinator], SwitchEntity):
     """
-    Zeigt ob gerade bewässert wird (read-only Status).
-    Tap startet/stoppt – funktioniert in allen Modi als Komfort-Toggle.
+    Aktivierungs-Schalter: steuert ob die Automatik/Kette starten darf.
+    ON  = Automatik aktiv, Zone nimmt an der Kette teil.
+    OFF = Keine automatischen Starts, Zone wird in der Kette uebersprungen.
+    Aendert sich NICHT durch laufende oder beendete Bewaesserung.
     """
     _attr_has_entity_name = True
     _attr_icon = "mdi:sprinkler"
@@ -46,10 +48,10 @@ class BrunnenActiveSwitch(CoordinatorEntity[BrunnenBewasserungCoordinator], Swit
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator._state != STATE_IDLE
+        return self.coordinator.enabled
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.coordinator.async_start_watering(force=True)
+        await self.coordinator.async_set_enabled(True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.coordinator.async_stop_watering()
+        await self.coordinator.async_set_enabled(False)
