@@ -249,7 +249,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                         await self._async_notify(message="Bodenfeuchte bereits ausreichend – keine Bewässerung nötig.")
                     return False
 
-        if not force and self._last_run == date.today():
+        if not force and self._last_run == now().date():
             return False
 
         self._pause_mode = "sensor" if self._has_water_level_sensor() else "time"
@@ -286,7 +286,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
     async def async_skip_today(self) -> None:
-        self._last_run = date.today()
+        self._last_run = now().date()
         self.async_update_listeners()
 
     # --- Watering Cycle ---
@@ -311,7 +311,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     self._state = STATE_IDLE
                     self._current_block = 0
                     # Erst jetzt als "heute gegossen" markieren
-                    self._last_run = date.today()
+                    self._last_run = now().date()
                     await self._async_save_last_run(self._last_run.isoformat())
                     self.async_update_listeners()
                     if self._should_notify(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH):
@@ -658,7 +658,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return False
         if self._mode != MODE_AUTO:
             return False
-        if self._last_run == date.today():
+        if self._last_run == now().date():
             return False
 
         opts = self.options
@@ -713,7 +713,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return "Wind-Pause"
         if not self.auto_mode:
             return "Manuell"
-        if self._last_run == date.today():
+        if self._last_run == now().date():
             return "Heute schon gelaufen"
 
         opts = self.options
