@@ -209,6 +209,25 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self.hass, self._async_background_check, _CHECK_INTERVAL
         )
 
+        # Solar-Sensor State-Change: sofortiger Check wenn Solar sich ändert
+        solar_sensor = opts.get(CONF_SOLAR_SENSOR)
+        if solar_sensor:
+            self._solar_unsub = async_track_state_change_event(
+                self.hass, [solar_sensor], self._async_on_solar_change
+            )
+        else:
+            self._solar_unsub = None
+
+        # Frühestzeit-Trigger: genau zur konfigurierten Startzeit checken
+        try:
+            parts = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START).split(":")
+            from homeassistant.helpers.event import async_track_time
+            self._earliest_unsub = async_track_time(
+                self.hass, self._async_background_check, time(int(parts[0]), int(parts[1]))
+            )
+        except Exception:
+            self._earliest_unsub = None
+
         water_sensor = opts.get(CONF_WATER_LEVEL_SENSOR)
         if water_sensor:
             self._water_level_unsub = async_track_state_change_event(
@@ -218,12 +237,15 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         return True
 
     async def async_shutdown(self) -> None:
-        for unsub in (self._wind_unsub, self._time_unsub, self._water_level_unsub):
+        for unsub in (self._wind_unsub, self._time_unsub, self._water_level_unsub,
+                      getattr(self, '_solar_unsub', None), getattr(self, '_earliest_unsub', None)):
             if unsub:
                 unsub()
         self._wind_unsub = None
         self._time_unsub = None
         self._water_level_unsub = None
+        self._solar_unsub = None
+        self._earliest_unsub = None
         await self.async_stop_watering()
 
     # --- Public API ---
@@ -484,6 +506,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             pass
 
     # --- Background Check ---
+
+    async def _async_on_solar_change(self, event) -> None:
+        """Triggert sofortigen Check wenn Solar-Sensor sich ändert."""
+        await self._async_background_check(None)
 
     async def _async_background_check(self, _now) -> None:
         if self._should_start_auto():
