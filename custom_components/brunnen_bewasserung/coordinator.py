@@ -209,15 +209,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self.hass, self._async_background_check, _CHECK_INTERVAL
         )
 
-        # Solar-Sensor State-Change: nur Statusanzeige aktualisieren
-        solar_sensor = opts.get(CONF_SOLAR_SENSOR)
-        if solar_sensor:
-            self._solar_unsub = async_track_state_change_event(
-                self.hass, [solar_sensor], self._async_on_solar_change
+        # Frühestzeit-Trigger: genau zur konfigurierten Startzeit checken
+        self._solar_unsub = None
+        try:
+            parts = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START).split(":")
+            from homeassistant.helpers.event import async_track_time
+            self._earliest_unsub = async_track_time(
+                self.hass, self._async_background_check, time(int(parts[0]), int(parts[1]))
             )
-        else:
-            self._solar_unsub = None
-        self._earliest_unsub = None
+        except Exception:
+            self._earliest_unsub = None
 
         water_sensor = opts.get(CONF_WATER_LEVEL_SENSOR)
         if water_sensor:
@@ -497,10 +498,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             pass
 
     # --- Background Check ---
-
-    async def _async_on_solar_change(self, event) -> None:
-        """Aktualisiert Statusanzeige wenn Solar-Sensor sich ändert."""
-        self.async_update_listeners()
 
     async def _async_background_check(self, _now) -> None:
         if self._should_start_auto():
