@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import (
     async_track_state_change_event,
+    async_track_time_change,
     async_track_time_interval,
 )
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -213,9 +214,9 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._solar_unsub = None
         try:
             parts = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START).split(":")
-            from homeassistant.helpers.event import async_track_time
-            self._earliest_unsub = async_track_time(
-                self.hass, self._async_background_check, time(int(parts[0]), int(parts[1]))
+            h, m = int(parts[0]), int(parts[1])
+            self._earliest_unsub = async_track_time_change(
+                self.hass, self._async_background_check, hour=h, minute=m, second=0
             )
         except Exception:
             self._earliest_unsub = None
