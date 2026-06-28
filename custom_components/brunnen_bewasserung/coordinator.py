@@ -161,7 +161,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         return self._enabled
 
     @property
-    def enabled(self) -> bool:
+    def is_active(self) -> bool:
         return self._mode != MODE_MANUAL or self._state == STATE_WATERING
 
     @property
