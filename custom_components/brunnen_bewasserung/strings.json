@@ -1,80 +1,44 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Brunnen Bewässerung – Pflicht-Entitäten",
-        "data": {
-          "instance_name": "Zonenname",
-          "pump_switch": "Pumpen-Schalter",
-          "moisture_sensor": "Bodenfeuchtesensor",
-          "solar_sensor": "Solar-Sensor",
-          "wind_speed_sensor": "Windgeschwindigkeits-Sensor",
-          "wind_gust_sensor": "Windböen-Sensor",
-          "giess_assistent_enabled": "Gieß-Assistent aktiv",
-          "giess_assistent_sensor": "Gieß-Assistent Sensor (optional)"
-        }
-      },
-      "optional_sensors": {
-        "title": "Optionale Sensoren & Verkettung",
-        "data": {
-          "next_zone_entry_id": "Nächste Zone (optional)",
-          "water_level_sensor": "Wasserstand-Sensor (optional)",
-          "water_level_low": "Pumpe AUS unter (%)",
-          "water_level_high": "Pumpe AN über (%)",
-          "water_level_timeout": "Max. Wartezeit (Minuten)"
-        }
-      },
-      "settings": {
-        "title": "Einstellungen",
-        "data": {
-          "target_moisture": "Ziel-Bodenfeuchte (%)",
-          "seconds_per_percent": "Sekunden pro Prozent (s/%)",
-          "min_runtime": "Minimale Laufzeit (min)",
-          "max_runtime": "Maximale Laufzeit (min)",
-          "block_duration": "Block-Dauer (min)",
-          "pause_duration": "Pause-Dauer (min)",
-          "wind_speed_limit": "Wind-Limit (km/h)",
-          "wind_gust_limit": "Böen-Limit (km/h)",
-          "solar_threshold": "Solar-Schwellwert (W/m²)",
-          "earliest_start": "Frühestzeit Start"
-        }
-      }
+      "user": {"title": "Was möchtest du einrichten?", "data": {"type": "Typ"}},
+      "garten": {"title": "Garten konfigurieren", "data": {
+        "garten_name": "Name", "solar_sensor": "Solar-Sensor", "wind_speed_sensor": "Windgeschwindigkeit",
+        "wind_gust_sensor": "Windböen", "earliest_start": "Früheststart", "wind_speed_limit": "Max. Windgeschwindigkeit",
+        "wind_gust_limit": "Max. Windböe", "solar_threshold": "Solar-Schwellwert",
+        "main_pump_switch": "Hauptpumpe (optional)", "flow_sensor": "Durchflussmesser (optional)",
+        "flow_pause_liters": "Liter bis Brunnenpause"
+      }},
+      "zone": {"title": "Zone konfigurieren", "data": {
+        "parent_entry_id": "Garten", "instance_name": "Zonenname", "pump_switch": "Ventil-Switch",
+        "moisture_sensor": "Bodenfeuchte-Sensor (optional)", "giess_assistent_enabled": "Gieß-Assistent aktiv",
+        "giess_assistent_sensor": "Gieß-Assistent Sensor/Boolean (optional)"
+      }},
+      "zone_settings": {"title": "Zonen-Einstellungen", "data": {
+        "mode": "Modus", "block_duration": "Block-Dauer", "pause_duration": "Pause-Dauer",
+        "manual_use_timer": "Timer verwenden (Manuell)", "manual_duration": "Manuelle Laufzeit",
+        "chain_position": "Kettenposition", "notify_service": "Benachrichtigungs-Service",
+        "target_moisture": "Ziel-Bodenfeuchte", "seconds_per_percent": "Sekunden pro Prozent",
+        "min_runtime": "Minimale Laufzeit", "max_runtime": "Maximale Laufzeit",
+        "fixed_runtime": "Feste Laufzeit (kein Sensor)"
+      }}
     },
     "error": {
-      "entity_not_found": "Eine oder mehrere Entitäten wurden nicht gefunden.",
-      "water_level_invalid": "Wasserstand-AUS-Wert muss kleiner als Wasserstand-AN-Wert sein."
+      "no_garten": "Bitte zuerst einen Garten anlegen.",
+      "entity_not_found": "Eine oder mehrere Entitäten wurden nicht gefunden."
     }
   },
   "options": {
     "step": {
-      "optional_sensors": {
-        "title": "Optionale Sensoren & Verkettung",
-        "data": {
-          "next_zone_entry_id": "Nächste Zone (optional)",
-          "water_level_sensor": "Wasserstand-Sensor (optional)",
-          "water_level_low": "Pumpe AUS unter (%)",
-          "water_level_high": "Pumpe AN über (%)",
-          "water_level_timeout": "Max. Wartezeit (Minuten)"
-        }
-      },
-      "settings": {
-        "title": "Einstellungen",
-        "data": {
-          "target_moisture": "Ziel-Bodenfeuchte (%)",
-          "seconds_per_percent": "Sekunden pro Prozent (s/%)",
-          "min_runtime": "Minimale Laufzeit (min)",
-          "max_runtime": "Maximale Laufzeit (min)",
-          "block_duration": "Block-Dauer (min)",
-          "pause_duration": "Pause-Dauer (min)",
-          "wind_speed_limit": "Wind-Limit (km/h)",
-          "wind_gust_limit": "Böen-Limit (km/h)",
-          "solar_threshold": "Solar-Schwellwert (W/m²)",
-          "earliest_start": "Frühestzeit Start"
-        }
-      }
-    },
-    "error": {
-      "water_level_invalid": "Wasserstand-AUS-Wert muss kleiner als Wasserstand-AN-Wert sein."
+      "garten": {"title": "Garten bearbeiten"},
+      "zone": {"title": "Zone bearbeiten"},
+      "zone_settings": {"title": "Zonen-Einstellungen"},
+      "notifications": {"title": "Benachrichtigungen", "data": {
+        "notify_on_start": "Bei Start", "notify_on_finish": "Bei Fertig",
+        "notify_on_block_pause": "Bei Block-Pause", "notify_on_stop": "Bei Abbruch",
+        "notify_on_wind": "Bei Wind", "notify_on_next_zone": "Bei Zonen-Wechsel",
+        "notify_on_no_water_needed": "Wenn kein Wasser nötig"
+      }}
     }
   }
 }
