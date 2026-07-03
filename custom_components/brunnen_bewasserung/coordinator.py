@@ -734,6 +734,17 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         return True
 
+    def _has_flow_sensor(self) -> bool:
+        """Delegiert an GartenCoordinator."""
+        garten = self.get_garten()
+        return garten.has_flow_sensor() if garten else False
+
+    def _get_next_zone_coordinator(self) -> "BrunnenBewasserungCoordinator | None":
+        next_id = self.options.get(CONF_NEXT_ZONE_ENTRY_ID)
+        if not next_id:
+            return None
+        return self.hass.data.get(DOMAIN, {}).get(next_id)
+
     def _get_next_start_info(self) -> str:
         if self._state == STATE_WATERING:
             return "Läuft"
