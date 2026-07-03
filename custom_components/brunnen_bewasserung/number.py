@@ -18,6 +18,7 @@ from .const import (
     CONF_BLOCK_DURATION,
     CONF_PAUSE_DURATION,
     CONF_SOLAR_THRESHOLD,
+    CONF_FIXED_RUNTIME, DEFAULT_FIXED_RUNTIME,
     CONF_FLOW_PAUSE_LITERS,
     DEFAULT_FLOW_PAUSE_LITERS,
     DEFAULT_TARGET_MOISTURE,
@@ -83,7 +84,7 @@ class BrunnenChainPositionNumber(_BrunnenNumberBase):
     """Kettenposition – bestimmt die Reihenfolge im Ketten-Modus."""
     _attr_icon = "mdi:sort-numeric-ascending"
     _attr_native_min_value = 1.0
-    _attr_native_max_value = 10.0
+    _attr_native_max_value = 20.0
     _attr_native_step = 1.0
     _attr_native_unit_of_measurement = None
 
@@ -111,6 +112,7 @@ async def async_setup_entry(
         BrunnenNumber(coordinator, entry, CONF_FLOW_PAUSE_LITERS, "Durchfluss bis Pause", "L", 10, 1000, 10, "mdi:water-sync", DEFAULT_FLOW_PAUSE_LITERS, entity_category=EntityCategory.CONFIG),
             BrunnenManualDurationNumber(coordinator, entry),
         BrunnenChainPositionNumber(coordinator, entry),
+        BrunnenNumber(coordinator, entry, CONF_FIXED_RUNTIME, "Feste Laufzeit", "min", 1, 180, 1, "mdi:timer", DEFAULT_FIXED_RUNTIME, entity_category=EntityCategory.CONFIG),
     ])
 
 
