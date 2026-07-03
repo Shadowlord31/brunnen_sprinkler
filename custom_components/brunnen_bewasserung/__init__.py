@@ -3,33 +3,44 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
-from .coordinator import BrunnenBewasserungCoordinator
+from .const import DOMAIN, CONF_ENTRY_TYPE, ENTRY_TYPE_GARTEN, ENTRY_TYPE_ZONE
+from .coordinator import GartenCoordinator, BrunnenBewasserungCoordinator
 from .services import async_register_services
 
 PLATFORMS = ["sensor", "binary_sensor", "switch", "number", "time", "button", "select"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    entry_type = entry.data.get(CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE)
+
+    if entry_type == ENTRY_TYPE_GARTEN:
+        coordinator = GartenCoordinator(hass, entry)
+        await coordinator.async_setup()
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+        # Garten hat keine eigenen Platforms
+        return True
+
+    # Zone
     coordinator = BrunnenBewasserungCoordinator(hass, entry)
     await coordinator.async_setup()
-
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await async_register_services(hass)
-
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
-    await coordinator.async_shutdown()
+    entry_type = entry.data.get(CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE)
+
+    coordinator = hass.data[DOMAIN].get(entry.entry_id)
+    if coordinator:
+        await coordinator.async_shutdown()
+
+    if entry_type == ENTRY_TYPE_GARTEN:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        return True
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
-
+        hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
-
-
