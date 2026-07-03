@@ -98,7 +98,7 @@ class BrunnenRemainingTimeSensor(_BrunnenSensorBase):
             "remaining_seconds": coord.remaining_s,
             "current_block": coord.current_block,
             "total_blocks": coord.total_blocks,
-            "pause_mode": coord.pause_mode,
+            "flow_sensor_active": coord._has_flow_sensor(),
             "next_zone": next_zone_title,
         }
 
@@ -131,16 +131,16 @@ class BrunnenPauseModeSensor(_BrunnenSensorBase):
 
     def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_pause_mode"
+        self._attr_unique_id = f"{entry.entry_id}_flow_mode"
         self._attr_name = "Pause Modus"
 
     @property
     def native_value(self) -> str:
-        return "Sensor" if self.coordinator.pause_mode == "sensor" else "Zeitbasiert"
+        return "Durchfluss" if self.coordinator._has_flow_sensor() else "Zeitbasiert"
 
     @property
     def icon(self) -> str:
-        return "mdi:water-pump" if self.coordinator.pause_mode == "sensor" else "mdi:timer"
+        return "mdi:water-pump" if self.coordinator._has_flow_sensor() else "mdi:timer"
 
 
 class BrunnenBlockRemainingTimeSensor(_BrunnenSensorBase):
