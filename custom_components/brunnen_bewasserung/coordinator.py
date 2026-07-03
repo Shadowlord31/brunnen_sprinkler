@@ -71,7 +71,7 @@ class GartenCoordinator(DataUpdateCoordinator):
         return merged
 
     @property
-    def name(self) -> str:
+    def garten_name(self) -> str:
         return self.options.get(CONF_GARTEN_NAME, "Garten")
 
     async def async_setup(self) -> bool:
@@ -121,6 +121,19 @@ class GartenCoordinator(DataUpdateCoordinator):
 
     def has_flow_sensor(self) -> bool:
         return bool(self.options.get(CONF_FLOW_SENSOR))
+
+    def get_giess_ok(self) -> bool:
+        """Prüft ob Gieß-Assistent OK ist (sensor, binary_sensor, input_boolean)."""
+        opts = self.options
+        if not opts.get(CONF_GIESS_ENABLED, True):
+            return True  # Deaktiviert = immer OK
+        giess_sensor = opts.get(CONF_GIESS_SENSOR)
+        if not giess_sensor:
+            return True
+        state_obj = self.hass.states.get(giess_sensor)
+        if not state_obj:
+            return True
+        return state_obj.state in ("on", "true", "True", "1")
 
     def get_flow_pause_liters(self) -> float:
         return float(self.options.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS))
@@ -705,15 +718,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if not garten.get_wind_ok():
             return False
 
-        opts = self.options
-        giess_enabled = opts.get(CONF_GIESS_ENABLED, True)
-        if giess_enabled:
-            giess_sensor = opts.get(CONF_GIESS_SENSOR)
-            if giess_sensor:
-                state_obj = self.hass.states.get(giess_sensor)
-                if state_obj and state_obj.state not in ("on", "true", "True", "1"):
-                    return False
+        if not garten.get_giess_ok():
+            return False
 
+        opts = self.options
         moisture_sensor = opts.get(CONF_MOISTURE_SENSOR)
         if moisture_sensor:
             try:
@@ -750,13 +758,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             except (ValueError, AttributeError):
                 pass
 
-        giess_enabled = opts.get(CONF_GIESS_ENABLED, True)
-        if giess_enabled:
-            giess_sensor = opts.get(CONF_GIESS_SENSOR)
-            if giess_sensor:
-                state_obj = self.hass.states.get(giess_sensor)
-                if state_obj and state_obj.state not in ("on", "true", "True", "1"):
-                    return "Heute nicht nötig"
+        if garten and not garten.get_giess_ok():
+            return "Heute nicht nötig"
 
         if not garten:
             return "Kein Garten konfiguriert"
