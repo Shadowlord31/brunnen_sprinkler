@@ -28,10 +28,12 @@ from .const import (
     CONF_GIESS_ENABLED,
     CONF_GIESS_SENSOR,
     CONF_NEXT_ZONE_ENTRY_ID,
-    CONF_WATER_LEVEL_SENSOR,
-    CONF_WATER_LEVEL_LOW,
-    CONF_WATER_LEVEL_HIGH,
-    CONF_WATER_LEVEL_TIMEOUT,
+    CONF_MAIN_PUMP_SWITCH,
+    CONF_FLOW_SENSOR,
+    CONF_FLOW_PAUSE_LITERS,
+    DEFAULT_FLOW_PAUSE_LITERS,
+    CONF_MANUAL_USE_TIMER,
+    DEFAULT_MANUAL_USE_TIMER,
     CONF_MIN_REMAINDER_BLOCK,
     DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_MODE, DEFAULT_MODE,
@@ -44,7 +46,6 @@ from .const import (
     CONF_NOTIFY_ON_BLOCK_PAUSE,
     CONF_NOTIFY_ON_STOP,
     CONF_NOTIFY_ON_WIND,
-    CONF_NOTIFY_ON_WATER_LEVEL,
     CONF_NOTIFY_ON_NEXT_ZONE,
     CONF_NOTIFY_ON_NO_WATER_NEEDED,
     DEFAULT_NOTIFY_ON_START,
@@ -52,7 +53,6 @@ from .const import (
     DEFAULT_NOTIFY_ON_BLOCK_PAUSE,
     DEFAULT_NOTIFY_ON_STOP,
     DEFAULT_NOTIFY_ON_WIND,
-    DEFAULT_NOTIFY_ON_WATER_LEVEL,
     DEFAULT_NOTIFY_ON_NEXT_ZONE,
     DEFAULT_NOTIFY_ON_NO_WATER_NEEDED,
     CONF_NOTIFY_TITLE,
@@ -77,9 +77,6 @@ from .const import (
     DEFAULT_WIND_GUST_LIMIT,
     DEFAULT_SOLAR_THRESHOLD,
     DEFAULT_EARLIEST_START,
-    DEFAULT_WATER_LEVEL_LOW,
-    DEFAULT_WATER_LEVEL_HIGH,
-    DEFAULT_WATER_LEVEL_TIMEOUT,
 )
 
 
@@ -112,6 +109,8 @@ def _settings_schema(defaults: dict) -> vol.Schema:
             )),
         vol.Required(CONF_CHAIN_POSITION, default=defaults.get(CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION)):
             NumberSelector(NumberSelectorConfig(min=1, max=10, step=1, mode=NumberSelectorMode.BOX)),
+        vol.Required(CONF_MANUAL_USE_TIMER, default=defaults.get(CONF_MANUAL_USE_TIMER, DEFAULT_MANUAL_USE_TIMER)):
+            BooleanSelector(),
         vol.Required(CONF_MANUAL_DURATION, default=defaults.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)):
             NumberSelector(NumberSelectorConfig(min=1, max=120, step=1, unit_of_measurement="min", mode=NumberSelectorMode.BOX)),
         vol.Required(CONF_MIN_REMAINDER_BLOCK, default=defaults.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)):
@@ -139,14 +138,12 @@ def _optional_sensors_schema(hass, defaults: dict, own_entry_id: str | None = No
                 options=next_zone_options,
                 mode=SelectSelectorMode.DROPDOWN,
             )),
-        vol.Optional(CONF_WATER_LEVEL_SENSOR, default=defaults.get(CONF_WATER_LEVEL_SENSOR) or ""):
-            TextSelector(TextSelectorConfig(autocomplete="off")),
-        vol.Required(CONF_WATER_LEVEL_LOW, default=defaults.get(CONF_WATER_LEVEL_LOW, DEFAULT_WATER_LEVEL_LOW)):
-            NumberSelector(NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)),
-        vol.Required(CONF_WATER_LEVEL_HIGH, default=defaults.get(CONF_WATER_LEVEL_HIGH, DEFAULT_WATER_LEVEL_HIGH)):
-            NumberSelector(NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)),
-        vol.Required(CONF_WATER_LEVEL_TIMEOUT, default=defaults.get(CONF_WATER_LEVEL_TIMEOUT, DEFAULT_WATER_LEVEL_TIMEOUT)):
-            NumberSelector(NumberSelectorConfig(min=5, max=120, step=5, unit_of_measurement="min", mode=NumberSelectorMode.BOX)),
+        vol.Optional(CONF_MAIN_PUMP_SWITCH):
+            EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
+        vol.Optional(CONF_FLOW_SENSOR):
+            EntitySelector(EntitySelectorConfig(domain="sensor")),
+        vol.Required(CONF_FLOW_PAUSE_LITERS, default=defaults.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS)):
+            NumberSelector(NumberSelectorConfig(min=10, max=1000, step=10, unit_of_measurement="L", mode=NumberSelectorMode.BOX)),
     })
 
 
@@ -203,14 +200,8 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            low = user_input.get(CONF_WATER_LEVEL_LOW, DEFAULT_WATER_LEVEL_LOW)
-            high = user_input.get(CONF_WATER_LEVEL_HIGH, DEFAULT_WATER_LEVEL_HIGH)
-            if low >= high:
-                errors["base"] = "water_level_invalid"
-
             if not errors:
-                # Leere Strings in None umwandeln
-                for key in (CONF_NEXT_ZONE_ENTRY_ID, CONF_WATER_LEVEL_SENSOR):
+                for key in (CONF_NEXT_ZONE_ENTRY_ID, CONF_MAIN_PUMP_SWITCH, CONF_FLOW_SENSOR):
                     if user_input.get(key, "") == "":
                         user_input[key] = None
                 self._data.update(user_input)
@@ -255,13 +246,8 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
         errors = {}
 
         if user_input is not None:
-            low = user_input.get(CONF_WATER_LEVEL_LOW, DEFAULT_WATER_LEVEL_LOW)
-            high = user_input.get(CONF_WATER_LEVEL_HIGH, DEFAULT_WATER_LEVEL_HIGH)
-            if low >= high:
-                errors["base"] = "water_level_invalid"
-
             if not errors:
-                for key in (CONF_NEXT_ZONE_ENTRY_ID, CONF_WATER_LEVEL_SENSOR):
+                for key in (CONF_NEXT_ZONE_ENTRY_ID, CONF_MAIN_PUMP_SWITCH, CONF_FLOW_SENSOR):
                     if user_input.get(key, "") == "":
                         user_input[key] = None
                 self._data.update(user_input)
@@ -300,8 +286,6 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(CONF_NOTIFY_ON_STOP, default=self._data.get(CONF_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_STOP)):
                     BooleanSelector(),
                 vol.Required(CONF_NOTIFY_ON_WIND, default=self._data.get(CONF_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WIND)):
-                    BooleanSelector(),
-                vol.Required(CONF_NOTIFY_ON_WATER_LEVEL, default=self._data.get(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL)):
                     BooleanSelector(),
                 vol.Required(CONF_NOTIFY_ON_NEXT_ZONE, default=self._data.get(CONF_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NEXT_ZONE)):
                     BooleanSelector(),
