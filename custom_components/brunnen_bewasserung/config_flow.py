@@ -113,6 +113,10 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     EntitySelector(EntitySelectorConfig(domain="sensor")),
                 vol.Required(CONF_FLOW_PAUSE_LITERS, default=DEFAULT_FLOW_PAUSE_LITERS):
                     NumberSelector(NumberSelectorConfig(min=10, max=2000, step=10, unit_of_measurement="L", mode=NumberSelectorMode.BOX)),
+                vol.Required(CONF_GIESS_ENABLED, default=True):
+                    BooleanSelector(),
+                vol.Optional(CONF_GIESS_SENSOR):
+                    EntitySelector(EntitySelectorConfig(domain=["sensor", "binary_sensor", "input_boolean"])),
             }),
             errors=errors,
         )
@@ -242,6 +246,10 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
                     EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
                 vol.Optional(CONF_FLOW_SENSOR):
                     EntitySelector(EntitySelectorConfig(domain="sensor")),
+                vol.Required(CONF_GIESS_ENABLED, default=self._data.get(CONF_GIESS_ENABLED, True)):
+                    BooleanSelector(),
+                vol.Optional(CONF_GIESS_SENSOR):
+                    EntitySelector(EntitySelectorConfig(domain=["sensor", "binary_sensor", "input_boolean"])),
             }),
         )
 
