@@ -26,10 +26,10 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_NOTIFY_ON_START, CONF_NOTIFY_ON_FINISH, CONF_NOTIFY_ON_BLOCK_PAUSE,
-    CONF_NOTIFY_ON_STOP, CONF_NOTIFY_ON_WIND, CONF_NOTIFY_ON_WATER_LEVEL,
+    CONF_NOTIFY_ON_STOP, CONF_NOTIFY_ON_WIND,
     CONF_NOTIFY_ON_NEXT_ZONE, CONF_NOTIFY_ON_NO_WATER_NEEDED,
     DEFAULT_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_BLOCK_PAUSE,
-    DEFAULT_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WATER_LEVEL,
+    DEFAULT_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_WIND,
     DEFAULT_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED,
     CONF_NOTIFY_TITLE,
     CONF_MOISTURE_SENSOR,
@@ -39,10 +39,12 @@ from .const import (
     CONF_GIESS_ENABLED,
     CONF_GIESS_SENSOR,
     CONF_NEXT_ZONE_ENTRY_ID,
-    CONF_WATER_LEVEL_SENSOR,
-    CONF_WATER_LEVEL_LOW,
-    CONF_WATER_LEVEL_HIGH,
-    CONF_WATER_LEVEL_TIMEOUT,
+    CONF_MAIN_PUMP_SWITCH,
+    CONF_FLOW_SENSOR,
+    CONF_FLOW_PAUSE_LITERS,
+    DEFAULT_FLOW_PAUSE_LITERS,
+    CONF_MANUAL_USE_TIMER,
+    DEFAULT_MANUAL_USE_TIMER,
     CONF_TARGET_MOISTURE,
     CONF_SECONDS_PER_PERCENT,
     CONF_MIN_RUNTIME,
@@ -63,9 +65,6 @@ from .const import (
     DEFAULT_WIND_GUST_LIMIT,
     DEFAULT_SOLAR_THRESHOLD,
     DEFAULT_EARLIEST_START,
-    DEFAULT_WATER_LEVEL_LOW,
-    DEFAULT_WATER_LEVEL_HIGH,
-    DEFAULT_WATER_LEVEL_TIMEOUT,
     STATE_IDLE,
     STATE_WATERING,
     STATE_PAUSING,
@@ -98,9 +97,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._last_run: date | None = None
         self._mode: str = MODE_AUTO  # MODE_AUTO | MODE_CHAIN | MODE_MANUAL
         self._enabled: bool = True  # Aktivierungs-Schalter: darf Automatik starten?
-        self._pause_mode: str = "time"
+        self._flow_liters_at_start: float = 0.0
         self._watering_task: asyncio.Task | None = None
-        self._water_level_unsub: Callable | None = None
         self._wind_unsub: Callable | None = None
         self._time_unsub: Callable | None = None
 
@@ -165,10 +163,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         return self._mode != MODE_MANUAL or self._state == STATE_WATERING
 
     @property
-    def pause_mode(self) -> str:
-        return self._pause_mode
-
-    @property
     def options(self) -> dict:
         # Merge data + options; options overwrite data (OptionsFlow schreibt in options)
         merged = dict(self._config_entry.data)
@@ -196,7 +190,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self._last_run = None
 
         opts = self.options
-        self._pause_mode = "sensor" if self._has_water_level_sensor() else "time"
 
         wind_entities = [
             opts.get(CONF_WIND_SPEED_SENSOR),
@@ -221,22 +214,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         except Exception:
             self._earliest_unsub = None
 
-        water_sensor = opts.get(CONF_WATER_LEVEL_SENSOR)
-        if water_sensor:
-            self._water_level_unsub = async_track_state_change_event(
-                self.hass, [water_sensor], self._async_water_level_changed
-            )
 
         return True
 
     async def async_shutdown(self) -> None:
-        for unsub in (self._wind_unsub, self._time_unsub, self._water_level_unsub,
+        for unsub in (self._wind_unsub, self._time_unsub,
                       getattr(self, '_solar_unsub', None), getattr(self, '_earliest_unsub', None)):
             if unsub:
                 unsub()
         self._wind_unsub = None
         self._time_unsub = None
-        self._water_level_unsub = None
         self._solar_unsub = None
         self._earliest_unsub = None
         await self.async_stop_watering()
@@ -250,9 +237,12 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return False  # Kette startet nur via force (getriggert von anderer Zone)
 
         if self._mode == MODE_MANUAL:
-            # Manuell: immer feste konfigurierte Laufzeit
             opts = self.options
-            runtime_s = float(opts.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)) * 60
+            use_timer = opts.get(CONF_MANUAL_USE_TIMER, DEFAULT_MANUAL_USE_TIMER)
+            if use_timer:
+                runtime_s = float(opts.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)) * 60
+            else:
+                runtime_s = float('inf')  # Kein Timer - läuft bis manueller Stop
         else:
             runtime_s = self._calculate_runtime()
             if runtime_s <= 0:
@@ -267,10 +257,15 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if not force and self._last_run == now().date():
             return False
 
-        self._pause_mode = "sensor" if self._has_water_level_sensor() else "time"
+        self._flow_liters_at_start = self._get_flow_liters()
         opts = self.options
-        block_s = min(runtime_s, opts.get(CONF_BLOCK_DURATION, DEFAULT_BLOCK_DURATION) * 60)
-        self._total_blocks = ceil(runtime_s / block_s)
+        block_duration_s = opts.get(CONF_BLOCK_DURATION, DEFAULT_BLOCK_DURATION) * 60
+        if runtime_s == float('inf'):
+            block_s = block_duration_s
+            self._total_blocks = 0
+        else:
+            block_s = min(runtime_s, block_duration_s)
+            self._total_blocks = ceil(runtime_s / block_s)
         self._current_block = 1
         self._remaining_s = runtime_s - block_s
         self._watering_task = self.hass.async_create_task(
@@ -334,8 +329,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     await self._async_trigger_next_zone()
                     break
 
-                if self._pause_mode == "sensor":
-                    await self._async_run_pause_sensor()
+                if self._has_flow_sensor():
+                    await self._async_run_pause_flow()
                 else:
                     await self._async_run_pause_time()
 
@@ -361,13 +356,24 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             pass
 
     async def _async_run_block(self, duration_s: float) -> None:
+        import math
         self._block_remaining_s = duration_s
         step = 1.0
         elapsed = 0.0
-        while elapsed < duration_s:
+        infinite = math.isinf(duration_s)
+        opts = self.options
+        flow_limit = opts.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS)
+
+        while infinite or elapsed < duration_s:
             await asyncio.sleep(step)
             elapsed += step
-            self._block_remaining_s = max(0.0, duration_s - elapsed)
+            if not infinite:
+                self._block_remaining_s = max(0.0, duration_s - elapsed)
+            if self._has_flow_sensor():
+                flow_since_start = self._get_flow_liters() - self._flow_liters_at_start
+                if flow_since_start >= flow_limit:
+                    self.async_update_listeners()
+                    return
             self.async_update_listeners()
 
     async def _async_run_pause_time(self) -> None:
@@ -389,44 +395,28 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self._block_remaining_s = max(0.0, pause_s - elapsed)
             self.async_update_listeners()
 
-    async def _async_run_pause_sensor(self) -> None:
+    async def _async_run_pause_flow(self) -> None:
+        """Brunnenerholungspause nach Durchfluss-Schwellwert."""
         opts = self.options
-        low = opts.get(CONF_WATER_LEVEL_LOW, DEFAULT_WATER_LEVEL_LOW)
-        high = opts.get(CONF_WATER_LEVEL_HIGH, DEFAULT_WATER_LEVEL_HIGH)
-        timeout_s = opts.get(CONF_WATER_LEVEL_TIMEOUT, DEFAULT_WATER_LEVEL_TIMEOUT) * 60
-        sensor = opts.get(CONF_WATER_LEVEL_SENSOR)
-
+        pause_s = opts.get(CONF_PAUSE_DURATION, DEFAULT_PAUSE_DURATION) * 60
         self._state = STATE_WAITING_WATER
+        self._block_remaining_s = pause_s
         self.async_update_listeners()
-        if self._should_notify(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL):
+        if self._should_notify(CONF_NOTIFY_ON_BLOCK_PAUSE, DEFAULT_NOTIFY_ON_BLOCK_PAUSE):
+            flow_limit = opts.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS)
             await self._async_notify(
-                message=f"Wasserstand niedrig. Warte auf Erholung (Ziel: >{high}%)."
+                message=f"Durchfluss-Schwellwert ({flow_limit:.0f}L) erreicht. Brunnenpause {int(pause_s // 60)} Min."
             )
-
-        start = datetime.now()
-        while True:
-            try:
-                state_obj = self.hass.states.get(sensor)
-                level = float(state_obj.state) if state_obj else 0.0
-            except (ValueError, AttributeError):
-                level = 0.0
-
-            if level >= high:
-                if self._should_notify(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL):
-                    await self._async_notify(
-                        message=f"Wasserstand erholt ({level:.0f}%). Weiter mit nächstem Block."
-                    )
-                break
-
-            if (datetime.now() - start).total_seconds() >= timeout_s:
-                if self._should_notify(CONF_NOTIFY_ON_WATER_LEVEL, DEFAULT_NOTIFY_ON_WATER_LEVEL):
-                    await self._async_notify(
-                        message="Timeout: Wasserstand nicht erholt. Bewässerung abgebrochen."
-                    )
-                await self.async_stop_watering()
+        step = 1.0
+        elapsed = 0.0
+        while elapsed < pause_s:
+            if self._state == STATE_IDLE:
                 return
-
-            await asyncio.sleep(30)
+            await asyncio.sleep(step)
+            elapsed += step
+            self._block_remaining_s = max(0.0, pause_s - elapsed)
+            self.async_update_listeners()
+        self._flow_liters_at_start = self._get_flow_liters()
 
     async def _async_trigger_next_zone(self) -> None:
         """Startet die nächste Ketten-Zone nach Position sortiert."""
@@ -484,19 +474,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 await self._async_notify(message="Wind nachgelassen. Bewässerung fortgesetzt.")
             self.async_update_listeners()
 
-    async def _async_water_level_changed(self, _event) -> None:
-        if self._state != STATE_WATERING:
-            return
-        opts = self.options
-        sensor = opts.get(CONF_WATER_LEVEL_SENSOR)
-        low = opts.get(CONF_WATER_LEVEL_LOW, DEFAULT_WATER_LEVEL_LOW)
-        try:
-            level = float(self.hass.states.get(sensor).state)
-        except (ValueError, AttributeError):
-            return
-        if level < low and self._watering_task and not self._watering_task.done():
-            # Block unterbrechen – Pause-Sensor-Logik greift im Cycle
-            pass
+
 
     # --- Background Check ---
 
@@ -569,6 +547,13 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             json.dump(existing, f)
 
     async def _async_pump_on(self) -> None:
+        main_pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
+        if main_pump:
+            domain = main_pump.split(".")[0]
+            await self.hass.services.async_call(
+                domain, "turn_on", {"entity_id": main_pump}, blocking=True
+            )
+            await asyncio.sleep(2)
         pump = self.options.get(CONF_PUMP_SWITCH)
         if pump:
             domain = pump.split(".")[0]
@@ -582,6 +567,12 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             domain = pump.split(".")[0]
             await self.hass.services.async_call(
                 domain, "turn_off", {"entity_id": pump}, blocking=True
+            )
+        main_pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
+        if main_pump:
+            domain = main_pump.split(".")[0]
+            await self.hass.services.async_call(
+                domain, "turn_off", {"entity_id": main_pump}, blocking=True
             )
 
     # --- Notify ---
@@ -772,9 +763,17 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return "Wartet auf Sonne"
         return f"{earliest_str} Uhr"
 
-    def _has_water_level_sensor(self) -> bool:
-        val = self.options.get(CONF_WATER_LEVEL_SENSOR)
-        return bool(val)
+    def _has_flow_sensor(self) -> bool:
+        return bool(self.options.get(CONF_FLOW_SENSOR))
+
+    def _get_flow_liters(self) -> float:
+        sensor = self.options.get(CONF_FLOW_SENSOR)
+        if not sensor:
+            return 0.0
+        try:
+            return float(self.hass.states.get(sensor).state)
+        except (ValueError, AttributeError):
+            return 0.0
 
     def _get_next_zone_coordinator(self) -> "BrunnenBewasserungCoordinator | None":
         next_id = self.options.get(CONF_NEXT_ZONE_ENTRY_ID)
