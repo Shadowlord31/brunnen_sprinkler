@@ -18,12 +18,20 @@ from homeassistant.util.dt import now
 
 from .const import (
     DOMAIN,
-    CONF_INSTANCE_NAME,
-    CONF_PUMP_SWITCH,
-    MODE_AUTO, MODE_CHAIN, MODE_MANUAL, CONF_MODE, DEFAULT_MODE,
+    ENTRY_TYPE_GARTEN, ENTRY_TYPE_ZONE, CONF_ENTRY_TYPE,
+    CONF_GARTEN_NAME, CONF_PARENT_ENTRY_ID,
+    CONF_INSTANCE_NAME, CONF_PUMP_SWITCH,
+    CONF_MAIN_PUMP_SWITCH, CONF_FLOW_SENSOR,
+    CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS,
+    CONF_SOLAR_SENSOR, CONF_WIND_SPEED_SENSOR, CONF_WIND_GUST_SENSOR,
+    CONF_WIND_SPEED_LIMIT, CONF_WIND_GUST_LIMIT, DEFAULT_WIND_SPEED_LIMIT, DEFAULT_WIND_GUST_LIMIT,
+    CONF_SOLAR_THRESHOLD, DEFAULT_SOLAR_THRESHOLD,
+    CONF_EARLIEST_START, DEFAULT_EARLIEST_START,
+    CONF_MODE, DEFAULT_MODE,
     CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION,
     CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION,
-    CONF_NOTIFY_SERVICE,
+    CONF_MANUAL_USE_TIMER, DEFAULT_MANUAL_USE_TIMER,
+    CONF_NOTIFY_SERVICE, CONF_NOTIFY_TITLE,
     CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_NOTIFY_ON_START, CONF_NOTIFY_ON_FINISH, CONF_NOTIFY_ON_BLOCK_PAUSE,
     CONF_NOTIFY_ON_STOP, CONF_NOTIFY_ON_WIND,
@@ -31,54 +39,112 @@ from .const import (
     DEFAULT_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_BLOCK_PAUSE,
     DEFAULT_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_WIND,
     DEFAULT_NOTIFY_ON_NEXT_ZONE, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED,
-    CONF_NOTIFY_TITLE,
-    CONF_MOISTURE_SENSOR,
-    CONF_SOLAR_SENSOR,
-    CONF_WIND_SPEED_SENSOR,
-    CONF_WIND_GUST_SENSOR,
-    CONF_GIESS_ENABLED,
-    CONF_GIESS_SENSOR,
+    CONF_MOISTURE_SENSOR, CONF_TARGET_MOISTURE, CONF_SECONDS_PER_PERCENT,
+    CONF_MIN_RUNTIME, CONF_MAX_RUNTIME, CONF_FIXED_RUNTIME,
+    CONF_BLOCK_DURATION, CONF_PAUSE_DURATION,
+    CONF_WIND_SPEED_LIMIT, CONF_WIND_GUST_LIMIT,
+    CONF_GIESS_ENABLED, CONF_GIESS_SENSOR,
     CONF_NEXT_ZONE_ENTRY_ID,
-    CONF_MAIN_PUMP_SWITCH,
-    CONF_FLOW_SENSOR,
-    CONF_FLOW_PAUSE_LITERS,
-    DEFAULT_FLOW_PAUSE_LITERS,
-    CONF_MANUAL_USE_TIMER,
-    DEFAULT_MANUAL_USE_TIMER,
-    CONF_TARGET_MOISTURE,
-    CONF_SECONDS_PER_PERCENT,
-    CONF_MIN_RUNTIME,
-    CONF_MAX_RUNTIME,
-    CONF_BLOCK_DURATION,
-    CONF_PAUSE_DURATION,
-    CONF_WIND_SPEED_LIMIT,
-    CONF_WIND_GUST_LIMIT,
-    CONF_SOLAR_THRESHOLD,
-    CONF_EARLIEST_START,
-    DEFAULT_TARGET_MOISTURE,
-    DEFAULT_SECONDS_PER_PERCENT,
-    DEFAULT_MIN_RUNTIME,
-    DEFAULT_MAX_RUNTIME,
-    DEFAULT_BLOCK_DURATION,
-    DEFAULT_PAUSE_DURATION,
-    DEFAULT_WIND_SPEED_LIMIT,
-    DEFAULT_WIND_GUST_LIMIT,
-    DEFAULT_SOLAR_THRESHOLD,
-    DEFAULT_EARLIEST_START,
-    STATE_IDLE,
-    STATE_WATERING,
-    STATE_PAUSING,
-    STATE_WIND_HOLD,
-    STATE_WAITING_WATER,
+    DEFAULT_TARGET_MOISTURE, DEFAULT_SECONDS_PER_PERCENT,
+    DEFAULT_MIN_RUNTIME, DEFAULT_MAX_RUNTIME, DEFAULT_FIXED_RUNTIME,
+    DEFAULT_BLOCK_DURATION, DEFAULT_PAUSE_DURATION,
+    MODE_AUTO, MODE_CHAIN, MODE_MANUAL,
+    STATE_IDLE, STATE_WATERING, STATE_PAUSING, STATE_WIND_HOLD, STATE_WAITING_WATER,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
 from datetime import timedelta
 _CHECK_INTERVAL = timedelta(minutes=5)
 
 
+class GartenCoordinator(DataUpdateCoordinator):
+    """Hub-Coordinator: verwaltet Wetterdaten, Hauptpumpe und Durchflussmesser."""
+
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+        super().__init__(hass, _LOGGER, name=f"{DOMAIN}_garten")
+        self._config_entry = config_entry
+
+    @property
+    def options(self) -> dict:
+        merged = dict(self._config_entry.data)
+        merged.update(self._config_entry.options)
+        return merged
+
+    @property
+    def name(self) -> str:
+        return self.options.get(CONF_GARTEN_NAME, "Garten")
+
+    async def async_setup(self) -> bool:
+        return True
+
+    async def async_shutdown(self) -> None:
+        pass
+
+    def get_wind_ok(self) -> bool:
+        opts = self.options
+        speed_sensor = opts.get(CONF_WIND_SPEED_SENSOR)
+        gust_sensor = opts.get(CONF_WIND_GUST_SENSOR)
+        speed_limit = float(opts.get(CONF_WIND_SPEED_LIMIT, DEFAULT_WIND_SPEED_LIMIT))
+        gust_limit = float(opts.get(CONF_WIND_GUST_LIMIT, DEFAULT_WIND_GUST_LIMIT))
+        try:
+            speed = float(self.hass.states.get(speed_sensor).state)
+            gust = float(self.hass.states.get(gust_sensor).state)
+            return speed <= speed_limit and gust <= gust_limit
+        except (ValueError, AttributeError):
+            return True
+
+    def get_solar_ok(self) -> bool:
+        opts = self.options
+        solar_sensor = opts.get(CONF_SOLAR_SENSOR)
+        solar_threshold = float(opts.get(CONF_SOLAR_THRESHOLD, DEFAULT_SOLAR_THRESHOLD))
+        try:
+            solar = float(self.hass.states.get(solar_sensor).state)
+            return solar < solar_threshold
+        except (ValueError, AttributeError):
+            return False
+
+    def get_earliest_start(self) -> time | None:
+        try:
+            parts = self.options.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START).split(":")
+            return time(int(parts[0]), int(parts[1]))
+        except Exception:
+            return None
+
+    def get_flow_liters(self) -> float:
+        sensor = self.options.get(CONF_FLOW_SENSOR)
+        if not sensor:
+            return 0.0
+        try:
+            return float(self.hass.states.get(sensor).state)
+        except (ValueError, AttributeError):
+            return 0.0
+
+    def has_flow_sensor(self) -> bool:
+        return bool(self.options.get(CONF_FLOW_SENSOR))
+
+    def get_flow_pause_liters(self) -> float:
+        return float(self.options.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS))
+
+    async def async_main_pump_on(self) -> None:
+        main_pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
+        if main_pump:
+            domain = main_pump.split(".")[0]
+            await self.hass.services.async_call(
+                domain, "turn_on", {"entity_id": main_pump}, blocking=True
+            )
+            await asyncio.sleep(2)
+
+    async def async_main_pump_off(self) -> None:
+        main_pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
+        if main_pump:
+            domain = main_pump.split(".")[0]
+            await self.hass.services.async_call(
+                domain, "turn_off", {"entity_id": main_pump}, blocking=True
+            )
+
+
 class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
+    """Zonen-Coordinator: verwaltet eine einzelne Bewässerungszone."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN)
@@ -87,20 +153,18 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._block_start_time: float = 0.0
         self._current_block_s: float = 0.0
         self._tick_task: asyncio.Task | None = None
-        self._block_start_time: float = 0.0
-        self._current_block_s: float = 0.0
-        self._tick_task: asyncio.Task | None = None
         self._remaining_s: float = 0.0
         self._block_remaining_s: float = 0.0
         self._current_block: int = 0
         self._total_blocks: int = 0
         self._last_run: date | None = None
-        self._mode: str = MODE_AUTO  # MODE_AUTO | MODE_CHAIN | MODE_MANUAL
-        self._enabled: bool = True  # Aktivierungs-Schalter: darf Automatik starten?
+        self._mode: str = MODE_AUTO
+        self._enabled: bool = True
         self._flow_liters_at_start: float = 0.0
         self._watering_task: asyncio.Task | None = None
         self._wind_unsub: Callable | None = None
         self._time_unsub: Callable | None = None
+        self._earliest_unsub: Callable | None = None
 
     # --- Properties ---
 
@@ -114,6 +178,9 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     @property
     def block_remaining_s(self) -> float:
+        if self._state == STATE_WATERING and self._block_start_time > 0:
+            elapsed = asyncio.get_event_loop().time() - self._block_start_time
+            return max(0.0, self._current_block_s - elapsed)
         return self._block_remaining_s
 
     @property
@@ -127,24 +194,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     @property
     def last_run(self) -> date | None:
         return self._last_run
-
-    @property
-    def block_remaining_s(self) -> float:
-        """Verbleibende Sekunden im aktuellen Block - live berechnet."""
-        if self._state == STATE_WATERING and self._block_start_time > 0:
-            elapsed = asyncio.get_event_loop().time() - self._block_start_time
-            remaining = self._current_block_s - elapsed
-            return max(0.0, remaining)
-        return 0.0
-
-    @property
-    def block_remaining_s(self) -> float:
-        """Verbleibende Sekunden im aktuellen Block - live berechnet."""
-        if self._state == STATE_WATERING and self._block_start_time > 0:
-            elapsed = asyncio.get_event_loop().time() - self._block_start_time
-            remaining = self._current_block_s - elapsed
-            return max(0.0, remaining)
-        return 0.0
 
     @property
     def mode(self) -> str:
@@ -164,23 +213,26 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     @property
     def options(self) -> dict:
-        # Merge data + options; options overwrite data (OptionsFlow schreibt in options)
         merged = dict(self._config_entry.data)
         merged.update(self._config_entry.options)
         return merged
 
+    def get_garten(self) -> GartenCoordinator | None:
+        parent_id = self.options.get(CONF_PARENT_ENTRY_ID)
+        if not parent_id:
+            return None
+        return self.hass.data.get(DOMAIN, {}).get(parent_id)
+
     # --- Setup / Teardown ---
 
     async def async_setup(self) -> bool:
-        # Pumpe sicherheitshalber ausschalten beim Start
         await self._async_pump_off()
         self._state = STATE_IDLE
         self._remaining_s = 0.0
         self._block_remaining_s = 0.0
         self._current_block = 0
-        # Modus aus gespeicherter Config laden
         self._mode = self.options.get(CONF_MODE, DEFAULT_MODE)
-        # _last_run aus persistentem Storage laden (im Executor - nicht blockierend)
+
         try:
             last_run_str, enabled = await self.hass.async_add_executor_job(self._load_state_sync)
             self._enabled = enabled
@@ -190,41 +242,44 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self._last_run = None
 
         opts = self.options
+        garten = self.get_garten()
+        wind_entities = []
+        if garten:
+            g_opts = garten.options
+            speed = g_opts.get(CONF_WIND_SPEED_SENSOR)
+            gust = g_opts.get(CONF_WIND_GUST_SENSOR)
+            if speed:
+                wind_entities.append(speed)
+            if gust:
+                wind_entities.append(gust)
 
-        wind_entities = [
-            opts.get(CONF_WIND_SPEED_SENSOR),
-            opts.get(CONF_WIND_GUST_SENSOR),
-        ]
-        self._wind_unsub = async_track_state_change_event(
-            self.hass, wind_entities, self._async_check_wind
-        )
+        if wind_entities:
+            self._wind_unsub = async_track_state_change_event(
+                self.hass, wind_entities, self._async_check_wind
+            )
 
         self._time_unsub = async_track_time_interval(
             self.hass, self._async_background_check, _CHECK_INTERVAL
         )
 
-        # Frühestzeit-Trigger: genau zur konfigurierten Startzeit checken
-        self._solar_unsub = None
         try:
-            parts = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START).split(":")
-            h, m = int(parts[0]), int(parts[1])
-            self._earliest_unsub = async_track_time_change(
-                self.hass, self._async_background_check, hour=h, minute=m, second=0
-            )
+            earliest = garten.get_earliest_start() if garten else None
+            if earliest:
+                self._earliest_unsub = async_track_time_change(
+                    self.hass, self._async_background_check,
+                    hour=earliest.hour, minute=earliest.minute, second=0
+                )
         except Exception:
             self._earliest_unsub = None
-
 
         return True
 
     async def async_shutdown(self) -> None:
-        for unsub in (self._wind_unsub, self._time_unsub,
-                      getattr(self, '_solar_unsub', None), getattr(self, '_earliest_unsub', None)):
+        for unsub in (self._wind_unsub, self._time_unsub, self._earliest_unsub):
             if unsub:
                 unsub()
         self._wind_unsub = None
         self._time_unsub = None
-        self._solar_unsub = None
         self._earliest_unsub = None
         await self.async_stop_watering()
 
@@ -234,7 +289,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if self._state != STATE_IDLE:
             return False
         if self._mode == MODE_CHAIN and not force:
-            return False  # Kette startet nur via force (getriggert von anderer Zone)
+            return False
 
         if self._mode == MODE_MANUAL:
             opts = self.options
@@ -242,7 +297,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             if use_timer:
                 runtime_s = float(opts.get(CONF_MANUAL_DURATION, DEFAULT_MANUAL_DURATION)) * 60
             else:
-                runtime_s = float('inf')  # Kein Timer - läuft bis manueller Stop
+                runtime_s = float('inf')
         else:
             runtime_s = self._calculate_runtime()
             if runtime_s <= 0:
@@ -257,7 +312,9 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if not force and self._last_run == now().date():
             return False
 
-        self._flow_liters_at_start = self._get_flow_liters()
+        garten = self.get_garten()
+        self._flow_liters_at_start = garten.get_flow_liters() if garten else 0.0
+
         opts = self.options
         block_duration_s = opts.get(CONF_BLOCK_DURATION, DEFAULT_BLOCK_DURATION) * 60
         if runtime_s == float('inf'):
@@ -266,15 +323,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         else:
             block_s = min(runtime_s, block_duration_s)
             self._total_blocks = ceil(runtime_s / block_s)
+
         self._current_block = 1
-        self._remaining_s = runtime_s - block_s
+        self._remaining_s = runtime_s - block_s if runtime_s != float('inf') else float('inf')
         self._watering_task = self.hass.async_create_task(
             self._async_run_watering_cycle(block_s)
         )
         if self._should_notify(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START):
-            runtime_min = round(runtime_s / 60, 1)
+            runtime_min = "∞" if runtime_s == float('inf') else str(round(runtime_s / 60, 1))
             await self._async_notify(
-                message=f"Bewässerung gestartet. Laufzeit: {runtime_min} Min in {self._total_blocks} Block(s)."
+                message=f"Bewässerung gestartet. Laufzeit: {runtime_min} Min in {self._total_blocks or '?'} Block(s)."
             )
         return True
 
@@ -302,25 +360,25 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     # --- Watering Cycle ---
 
     async def _async_run_watering_cycle(self, first_block_s: float) -> None:
+        import math
         opts = self.options
         block_duration_s = opts.get(CONF_BLOCK_DURATION, DEFAULT_BLOCK_DURATION) * 60
         current_block_s = first_block_s
+        garten = self.get_garten()
 
         try:
             while True:
                 self._state = STATE_WATERING
                 self.async_update_listeners()
                 await self._async_pump_on()
-
                 await self._async_run_block(current_block_s)
-
                 await self._async_pump_off()
                 self.async_update_listeners()
 
-                if self._remaining_s <= 0:
+                infinite = self._remaining_s == float('inf')
+                if not infinite and self._remaining_s <= 0:
                     self._state = STATE_IDLE
                     self._current_block = 0
-                    # Erst jetzt als "heute gegossen" markieren
                     self._last_run = now().date()
                     await self._async_save_last_run(self._last_run.isoformat())
                     self.async_update_listeners()
@@ -329,28 +387,25 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     await self._async_trigger_next_zone()
                     break
 
-                if self._has_flow_sensor():
-                    await self._async_run_pause_flow()
+                if garten and garten.has_flow_sensor():
+                    await self._async_run_pause_flow(garten)
                 else:
                     await self._async_run_pause_time()
 
-                # Falls stop_watering während Pause aufgerufen wurde
                 if self._state == STATE_IDLE:
                     break
 
                 self._current_block += 1
-                next_block_s = min(self._remaining_s, block_duration_s)
-                self._remaining_s -= next_block_s
-
-                # Restzeit zu klein für eigenen Block?
-                # Auf aktuellen Block draufrechnen statt Mini-Block
-                opts = self.options
-                MIN_BLOCK_S = float(opts.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)) * 60
-                if 0 < self._remaining_s < MIN_BLOCK_S:
-                    next_block_s += self._remaining_s
-                    self._remaining_s = 0.0
-
-                current_block_s = next_block_s
+                if not infinite:
+                    next_block_s = min(self._remaining_s, block_duration_s)
+                    self._remaining_s -= next_block_s
+                    MIN_BLOCK_S = float(opts.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)) * 60
+                    if 0 < self._remaining_s < MIN_BLOCK_S:
+                        next_block_s += self._remaining_s
+                        self._remaining_s = 0.0
+                    current_block_s = next_block_s
+                else:
+                    current_block_s = block_duration_s
 
         except asyncio.CancelledError:
             pass
@@ -361,16 +416,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         step = 1.0
         elapsed = 0.0
         infinite = math.isinf(duration_s)
-        opts = self.options
-        flow_limit = opts.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS)
+        garten = self.get_garten()
+        flow_limit = garten.get_flow_pause_liters() if garten else DEFAULT_FLOW_PAUSE_LITERS
 
         while infinite or elapsed < duration_s:
             await asyncio.sleep(step)
             elapsed += step
             if not infinite:
                 self._block_remaining_s = max(0.0, duration_s - elapsed)
-            if self._has_flow_sensor():
-                flow_since_start = self._get_flow_liters() - self._flow_liters_at_start
+            if garten and garten.has_flow_sensor():
+                flow_since_start = garten.get_flow_liters() - self._flow_liters_at_start
                 if flow_since_start >= flow_limit:
                     self.async_update_listeners()
                     return
@@ -384,8 +439,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
         if self._should_notify(CONF_NOTIFY_ON_BLOCK_PAUSE, DEFAULT_NOTIFY_ON_BLOCK_PAUSE):
             await self._async_notify(
-                message=f"Block {self._current_block}/{self._total_blocks} beendet. "
-                        f"Pause {int(pause_s // 60)} Min. Restzeit: {self._remaining_s / 60:.0f} Min."
+                message=f"Block {self._current_block}/{self._total_blocks or '?'} beendet. "
+                        f"Pause {int(pause_s // 60)} Min."
             )
         step = 1.0
         elapsed = 0.0
@@ -395,15 +450,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self._block_remaining_s = max(0.0, pause_s - elapsed)
             self.async_update_listeners()
 
-    async def _async_run_pause_flow(self) -> None:
-        """Brunnenerholungspause nach Durchfluss-Schwellwert."""
+    async def _async_run_pause_flow(self, garten: GartenCoordinator) -> None:
         opts = self.options
         pause_s = opts.get(CONF_PAUSE_DURATION, DEFAULT_PAUSE_DURATION) * 60
         self._state = STATE_WAITING_WATER
         self._block_remaining_s = pause_s
         self.async_update_listeners()
         if self._should_notify(CONF_NOTIFY_ON_BLOCK_PAUSE, DEFAULT_NOTIFY_ON_BLOCK_PAUSE):
-            flow_limit = opts.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS)
+            flow_limit = garten.get_flow_pause_liters()
             await self._async_notify(
                 message=f"Durchfluss-Schwellwert ({flow_limit:.0f}L) erreicht. Brunnenpause {int(pause_s // 60)} Min."
             )
@@ -416,21 +470,19 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             elapsed += step
             self._block_remaining_s = max(0.0, pause_s - elapsed)
             self.async_update_listeners()
-        self._flow_liters_at_start = self._get_flow_liters()
+        self._flow_liters_at_start = garten.get_flow_liters()
 
     async def _async_trigger_next_zone(self) -> None:
-        """Startet die nächste Ketten-Zone nach Position sortiert."""
-        from .const import DOMAIN
         all_coordinators = [
             coord for coord in self.hass.data.get(DOMAIN, {}).values()
-            if hasattr(coord, '_mode') and coord._mode == MODE_CHAIN
+            if isinstance(coord, BrunnenBewasserungCoordinator)
+            and coord._mode == MODE_CHAIN
             and coord._state == STATE_IDLE
             and getattr(coord, '_enabled', True)
             and coord is not self
         ]
         if not all_coordinators:
             return
-        # Nach Kettenposition sortieren
         all_coordinators.sort(
             key=lambda c: int(c.options.get(CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION))
         )
@@ -446,35 +498,23 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     # --- Wind ---
 
     async def _async_check_wind(self, _event) -> None:
-        opts = self.options
-        speed_sensor = opts.get(CONF_WIND_SPEED_SENSOR)
-        gust_sensor = opts.get(CONF_WIND_GUST_SENSOR)
-        speed_limit = opts.get(CONF_WIND_SPEED_LIMIT, DEFAULT_WIND_SPEED_LIMIT)
-        gust_limit = opts.get(CONF_WIND_GUST_LIMIT, DEFAULT_WIND_GUST_LIMIT)
-
-        try:
-            speed = float(self.hass.states.get(speed_sensor).state)
-            gust = float(self.hass.states.get(gust_sensor).state)
-        except (ValueError, AttributeError):
+        garten = self.get_garten()
+        if not garten:
             return
+        wind_ok = garten.get_wind_ok()
 
-        if self._state == STATE_WATERING and (speed > speed_limit or gust > gust_limit):
+        if self._state == STATE_WATERING and not wind_ok:
             self._state = STATE_WIND_HOLD
             await self._async_pump_off()
             if self._should_notify(CONF_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WIND):
-                await self._async_notify(
-                    message=f"Wind-Pause: {speed:.1f} km/h / Böe {gust:.1f} km/h"
-                )
+                await self._async_notify(message="Wind-Pause: Zu starker Wind.")
             self.async_update_listeners()
-
-        elif self._state == STATE_WIND_HOLD and speed <= speed_limit and gust <= gust_limit:
+        elif self._state == STATE_WIND_HOLD and wind_ok:
             self._state = STATE_WATERING
             await self._async_pump_on()
             if self._should_notify(CONF_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WIND):
                 await self._async_notify(message="Wind nachgelassen. Bewässerung fortgesetzt.")
             self.async_update_listeners()
-
-
 
     # --- Background Check ---
 
@@ -484,8 +524,31 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     # --- Pump helpers ---
 
+    async def _async_pump_on(self) -> None:
+        garten = self.get_garten()
+        if garten:
+            await garten.async_main_pump_on()
+        pump = self.options.get(CONF_PUMP_SWITCH)
+        if pump:
+            domain = pump.split(".")[0]
+            await self.hass.services.async_call(
+                domain, "turn_on", {"entity_id": pump}, blocking=True
+            )
+
+    async def _async_pump_off(self) -> None:
+        pump = self.options.get(CONF_PUMP_SWITCH)
+        if pump:
+            domain = pump.split(".")[0]
+            await self.hass.services.async_call(
+                domain, "turn_off", {"entity_id": pump}, blocking=True
+            )
+        garten = self.get_garten()
+        if garten:
+            await garten.async_main_pump_off()
+
+    # --- Storage ---
+
     async def _async_save_last_run(self, iso_date: str) -> None:
-        """Speichert _last_run persistent als JSON."""
         await self.hass.async_add_executor_job(self._save_last_run_sync, iso_date)
 
     def _load_state_sync(self) -> tuple[str | None, bool]:
@@ -515,7 +578,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             json.dump(existing, f)
 
     async def async_reset_last_run(self) -> None:
-        """Setzt _last_run zurück (für Reset-Button)."""
         self._last_run = None
         await self.hass.async_add_executor_job(self._reset_last_run_sync)
         self.async_update_listeners()
@@ -527,7 +589,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             os.remove(path)
 
     async def async_set_enabled(self, enabled: bool) -> None:
-        """Setzt den Aktivierungs-Schalter und speichert ihn persistent."""
         self._enabled = enabled
         await self.hass.async_add_executor_job(self._save_enabled_sync, enabled)
         self.async_update_listeners()
@@ -546,35 +607,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         with open(path, "w") as f:
             json.dump(existing, f)
 
-    async def _async_pump_on(self) -> None:
-        main_pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
-        if main_pump:
-            domain = main_pump.split(".")[0]
-            await self.hass.services.async_call(
-                domain, "turn_on", {"entity_id": main_pump}, blocking=True
-            )
-            await asyncio.sleep(2)
-        pump = self.options.get(CONF_PUMP_SWITCH)
-        if pump:
-            domain = pump.split(".")[0]
-            await self.hass.services.async_call(
-                domain, "turn_on", {"entity_id": pump}, blocking=True
-            )
-
-    async def _async_pump_off(self) -> None:
-        pump = self.options.get(CONF_PUMP_SWITCH)
-        if pump:
-            domain = pump.split(".")[0]
-            await self.hass.services.async_call(
-                domain, "turn_off", {"entity_id": pump}, blocking=True
-            )
-        main_pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
-        if main_pump:
-            domain = main_pump.split(".")[0]
-            await self.hass.services.async_call(
-                domain, "turn_off", {"entity_id": main_pump}, blocking=True
-            )
-
     # --- Notify ---
 
     def _should_notify(self, flag_key: str, default: bool = True) -> bool:
@@ -588,7 +620,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         notify_service = opts.get(CONF_NOTIFY_SERVICE, "")
         if not notify_service:
-            # Kein Service konfiguriert → persistent notification als Fallback
             self.hass.async_create_task(
                 self.hass.services.async_call(
                     "persistent_notification", "create",
@@ -603,44 +634,36 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             service_name = ".".join(parts[1:]) if len(parts) > 1 else ""
 
             if domain == "script":
-                # Script-Domain: master_notify braucht Extra-Felder
                 data = {
-                    "title": title,
-                    "message": message,
-                    "group_admins_enable": True,
-                    "group_family_enable": True,
-                    "alexa_enabled": False,
-                    "google_enabled": False,
-                    "critical_enabled": False,
+                    "title": title, "message": message,
+                    "group_admins_enable": True, "group_family_enable": True,
+                    "alexa_enabled": False, "google_enabled": False, "critical_enabled": False,
                 }
-                await self.hass.services.async_call(
-                    domain, service_name, data, blocking=False,
-                )
+                await self.hass.services.async_call(domain, service_name, data, blocking=False)
             elif domain == "notify":
-                # Seit HA 2024.x: notify-Entities nutzen notify.send_message mit entity_id
                 await self.hass.services.async_call(
                     "notify", "send_message",
                     {"entity_id": notify_service, "message": message, "title": title},
                     blocking=False,
                 )
             else:
-                # Andere Domains direkt aufrufen
                 await self.hass.services.async_call(
-                    domain, service_name,
-                    {"title": title, "message": message},
-                    blocking=False,
+                    domain, service_name, {"title": title, "message": message}, blocking=False,
                 )
         except Exception as e:
             _LOGGER.error("Brunnen Bewässerung Notify Fehler: %s", e)
-            self.hass.async_create_task(
-                self.hass.services.async_call(
-                    "persistent_notification", "create",
-                    {"title": title, "message": message, "notification_id": "brunnen_bewasserung"},
-                )
-            )
+
+    # --- Runtime Calculation ---
+
     def _calculate_runtime(self) -> float:
         opts = self.options
         moisture_sensor = opts.get(CONF_MOISTURE_SENSOR)
+
+        # Kein Bodensensor → feste Laufzeit
+        if not moisture_sensor:
+            fixed = float(opts.get(CONF_FIXED_RUNTIME, DEFAULT_FIXED_RUNTIME))
+            return fixed * 60
+
         target = float(opts.get(CONF_TARGET_MOISTURE, DEFAULT_TARGET_MOISTURE))
         sek_pro_prozent = float(opts.get(CONF_SECONDS_PER_PERCENT, DEFAULT_SECONDS_PER_PERCENT))
         min_s = float(opts.get(CONF_MIN_RUNTIME, DEFAULT_MIN_RUNTIME)) * 60
@@ -667,54 +690,47 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if self._last_run == now().date():
             return False
 
+        garten = self.get_garten()
+        if not garten:
+            return False
+
+        earliest = garten.get_earliest_start()
+        if not earliest:
+            return False
+        if now().time() < earliest:
+            return False
+
+        if not garten.get_solar_ok():
+            return False
+        if not garten.get_wind_ok():
+            return False
+
         opts = self.options
-        earliest_str = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START)
-        try:
-            parts = earliest_str.split(":")
-            h, m = int(parts[0]), int(parts[1])
-            earliest = time(h, m)
-        except (ValueError, AttributeError):
-            return False
-
-        current_time = now().time()
-        if current_time < earliest:
-            return False
-
-        solar_sensor = opts.get(CONF_SOLAR_SENSOR)
-        solar_threshold = float(opts.get(CONF_SOLAR_THRESHOLD, DEFAULT_SOLAR_THRESHOLD))
-        try:
-            solar = float(self.hass.states.get(solar_sensor).state)
-            if solar >= solar_threshold:
-                return False
-        except (ValueError, AttributeError):
-            return False
-
         giess_enabled = opts.get(CONF_GIESS_ENABLED, True)
         if giess_enabled:
             giess_sensor = opts.get(CONF_GIESS_SENSOR)
             if giess_sensor:
                 state_obj = self.hass.states.get(giess_sensor)
-                if state_obj and state_obj.state != "on":
+                if state_obj and state_obj.state not in ("on", "true", "True", "1"):
                     return False
 
         moisture_sensor = opts.get(CONF_MOISTURE_SENSOR)
-        try:
-            current = float(self.hass.states.get(moisture_sensor).state)
-            target = float(opts.get(CONF_TARGET_MOISTURE, DEFAULT_TARGET_MOISTURE))
-            if current >= target:
+        if moisture_sensor:
+            try:
+                current = float(self.hass.states.get(moisture_sensor).state)
+                target = float(opts.get(CONF_TARGET_MOISTURE, DEFAULT_TARGET_MOISTURE))
+                if current >= target:
+                    return False
+            except (ValueError, AttributeError):
                 return False
-        except (ValueError, AttributeError):
-            return False
 
         return True
 
     def _get_next_start_info(self) -> str:
         if self._state == STATE_WATERING:
             return "Läuft"
-        if self._state == STATE_PAUSING:
+        if self._state in (STATE_PAUSING, STATE_WAITING_WATER):
             return f"Pause ({self._remaining_s / 60:.0f} Min Rest)"
-        if self._state == STATE_WAITING_WATER:
-            return "Wartet auf Brunnen"
         if self._state == STATE_WIND_HOLD:
             return "Wind-Pause"
         if not self.auto_mode:
@@ -722,61 +738,35 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if self._last_run == now().date():
             return "Heute schon gelaufen"
 
+        garten = self.get_garten()
         opts = self.options
         moisture_sensor = opts.get(CONF_MOISTURE_SENSOR)
-        target = float(opts.get(CONF_TARGET_MOISTURE, DEFAULT_TARGET_MOISTURE))
-        try:
-            current = float(self.hass.states.get(moisture_sensor).state)
-            if current >= target:
-                return "Boden feucht genug"
-        except (ValueError, AttributeError):
-            pass
+        if moisture_sensor:
+            target = float(opts.get(CONF_TARGET_MOISTURE, DEFAULT_TARGET_MOISTURE))
+            try:
+                current = float(self.hass.states.get(moisture_sensor).state)
+                if current >= target:
+                    return "Boden feucht genug"
+            except (ValueError, AttributeError):
+                pass
 
         giess_enabled = opts.get(CONF_GIESS_ENABLED, True)
         if giess_enabled:
             giess_sensor = opts.get(CONF_GIESS_SENSOR)
             if giess_sensor:
                 state_obj = self.hass.states.get(giess_sensor)
-                if state_obj and state_obj.state != "on":
+                if state_obj and state_obj.state not in ("on", "true", "True", "1"):
                     return "Heute nicht nötig"
 
-        earliest_str = opts.get(CONF_EARLIEST_START, DEFAULT_EARLIEST_START)
-        try:
-            parts = earliest_str.split(":")
-            h, m = int(parts[0]), int(parts[1])
-            earliest = time(h, m)
-        except (ValueError, AttributeError):
+        if not garten:
+            return "Kein Garten konfiguriert"
+
+        earliest = garten.get_earliest_start()
+        if not earliest:
             return "Unbekannt"
 
-        current_time = now().time()
-        solar_sensor = opts.get(CONF_SOLAR_SENSOR)
-        solar_threshold = float(opts.get(CONF_SOLAR_THRESHOLD, DEFAULT_SOLAR_THRESHOLD))
-        try:
-            solar = float(self.hass.states.get(solar_sensor).state)
-            solar_ok = solar < solar_threshold
-        except (ValueError, AttributeError):
-            solar_ok = False
-
-        if current_time >= earliest and solar_ok:
+        if now().time() >= earliest and garten.get_solar_ok():
             return "Jetzt"
-        if current_time >= earliest:
+        if now().time() >= earliest:
             return "Wartet auf Sonne"
-        return f"{earliest_str} Uhr"
-
-    def _has_flow_sensor(self) -> bool:
-        return bool(self.options.get(CONF_FLOW_SENSOR))
-
-    def _get_flow_liters(self) -> float:
-        sensor = self.options.get(CONF_FLOW_SENSOR)
-        if not sensor:
-            return 0.0
-        try:
-            return float(self.hass.states.get(sensor).state)
-        except (ValueError, AttributeError):
-            return 0.0
-
-    def _get_next_zone_coordinator(self) -> "BrunnenBewasserungCoordinator | None":
-        next_id = self.options.get(CONF_NEXT_ZONE_ENTRY_ID)
-        if not next_id:
-            return None
-        return self.hass.data.get(DOMAIN, {}).get(next_id)
+        return f"{earliest.strftime('%H:%M')} Uhr"
