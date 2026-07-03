@@ -15,11 +15,17 @@ CONF_GIESS_SENSOR = "giess_assistent_sensor"
 # Instanz-Verkettung (optional)
 CONF_NEXT_ZONE_ENTRY_ID = "next_zone_entry_id"  # entry_id der nächsten Instanz, oder None
 
-# Wasserstand-Sensor (optional, ersetzt Block/Pause wenn gesetzt)
-CONF_WATER_LEVEL_SENSOR = "water_level_sensor"
-CONF_WATER_LEVEL_LOW = "water_level_low"
-CONF_WATER_LEVEL_HIGH = "water_level_high"
-CONF_WATER_LEVEL_TIMEOUT = "water_level_timeout"
+# Hauptpumpe (optional - wenn nicht gesetzt wird Zonen-Switch direkt verwendet)
+CONF_MAIN_PUMP_SWITCH = "main_pump_switch"
+
+# Durchflussmesser (optional - Template-Sensor der Gesamtdurchfluss summiert)
+CONF_FLOW_SENSOR = "flow_sensor"
+CONF_FLOW_PAUSE_LITERS = "flow_pause_liters"
+DEFAULT_FLOW_PAUSE_LITERS = 200.0
+
+# Manuell-Modus Timer-Toggle
+CONF_MANUAL_USE_TIMER = "manual_use_timer"
+DEFAULT_MANUAL_USE_TIMER = True
 
 # Standardwerte
 DEFAULT_TARGET_MOISTURE = 45.0
@@ -32,9 +38,7 @@ DEFAULT_WIND_SPEED_LIMIT = 15.0
 DEFAULT_WIND_GUST_LIMIT = 25.0
 DEFAULT_SOLAR_THRESHOLD = 400.0
 DEFAULT_EARLIEST_START = "17:30"
-DEFAULT_WATER_LEVEL_LOW = 20.0
-DEFAULT_WATER_LEVEL_HIGH = 60.0
-DEFAULT_WATER_LEVEL_TIMEOUT = 30.0
+
 CONF_NOTIFY_SERVICE = "notify_service"
 CONF_NOTIFY_TITLE = "notify_title"
 DEFAULT_NOTIFY_TITLE = ""
@@ -44,7 +48,7 @@ STATE_IDLE = "idle"
 STATE_WATERING = "watering"
 STATE_PAUSING = "pausing"
 STATE_WIND_HOLD = "wind_hold"
-STATE_WAITING_WATER = "waiting_water"  # NEU: wartet auf Brunnen-Erholung per Sensor
+STATE_WAITING_WATER = "waiting_water"  # wartet auf Brunnen-Erholung (Durchfluss-Pause)
 
 # Attribute
 ATTR_REMAINING_S = "remaining_seconds"
