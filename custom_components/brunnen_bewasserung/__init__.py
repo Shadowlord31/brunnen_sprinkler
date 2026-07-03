@@ -7,7 +7,8 @@ from .const import DOMAIN, CONF_ENTRY_TYPE, ENTRY_TYPE_GARTEN, ENTRY_TYPE_ZONE
 from .coordinator import GartenCoordinator, BrunnenBewasserungCoordinator
 from .services import async_register_services
 
-PLATFORMS = ["sensor", "binary_sensor", "switch", "number", "time", "button", "select"]
+PLATFORMS_ZONE = ["sensor", "binary_sensor", "switch", "number", "time", "button", "select"]
+PLATFORMS_GARTEN = ["number_garten", "time_garten"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -17,30 +18,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator = GartenCoordinator(hass, entry)
         await coordinator.async_setup()
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-        # Garten hat keine eigenen Platforms
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_GARTEN)
         return True
 
-    # Zone
     coordinator = BrunnenBewasserungCoordinator(hass, entry)
     await coordinator.async_setup()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_ZONE)
     await async_register_services(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry_type = entry.data.get(CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE)
-
     coordinator = hass.data[DOMAIN].get(entry.entry_id)
     if coordinator:
         await coordinator.async_shutdown()
 
-    if entry_type == ENTRY_TYPE_GARTEN:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-        return True
-
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    platforms = PLATFORMS_GARTEN if entry_type == ENTRY_TYPE_GARTEN else PLATFORMS_ZONE
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
