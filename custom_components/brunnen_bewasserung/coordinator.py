@@ -351,14 +351,18 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     async def async_stop_watering(self) -> None:
         was_active = self._state != STATE_IDLE
+        self._state = STATE_IDLE  # Zuerst State setzen damit Pause-Loop abbricht
         if self._tick_task:
             self._tick_task.cancel()
             self._tick_task = None
         if self._watering_task:
             self._watering_task.cancel()
+            try:
+                await self._watering_task
+            except asyncio.CancelledError:
+                pass
             self._watering_task = None
         await self._async_pump_off()
-        self._state = STATE_IDLE
         if was_active and self._should_notify(CONF_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_STOP):
             await self._async_notify(message="Bewässerung manuell abgebrochen.")
         self._remaining_s = 0.0
@@ -457,11 +461,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             )
         step = 1.0
         elapsed = 0.0
-        while elapsed < pause_s:
-            await asyncio.sleep(step)
-            elapsed += step
-            self._block_remaining_s = max(0.0, pause_s - elapsed)
-            self.async_update_listeners()
+        try:
+            while elapsed < pause_s:
+                await asyncio.sleep(step)
+                elapsed += step
+                self._block_remaining_s = max(0.0, pause_s - elapsed)
+                self.async_update_listeners()
+        except asyncio.CancelledError:
+            return
 
     async def _async_run_pause_flow(self, garten: GartenCoordinator) -> None:
         opts = self.options
@@ -476,13 +483,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             )
         step = 1.0
         elapsed = 0.0
-        while elapsed < pause_s:
-            if self._state == STATE_IDLE:
-                return
-            await asyncio.sleep(step)
-            elapsed += step
-            self._block_remaining_s = max(0.0, pause_s - elapsed)
-            self.async_update_listeners()
+        try:
+            while elapsed < pause_s:
+                if self._state == STATE_IDLE:
+                    return
+                await asyncio.sleep(step)
+                elapsed += step
+                self._block_remaining_s = max(0.0, pause_s - elapsed)
+                self.async_update_listeners()
+        except asyncio.CancelledError:
+            return
         self._flow_liters_at_start = garten.get_flow_liters()
 
     async def _async_trigger_next_zone(self) -> None:
