@@ -264,7 +264,14 @@ class BrunnenBewasserungOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_MOISTURE_SENSOR):
                     EntitySelector(EntitySelectorConfig(domain="sensor")),
                 vol.Optional(CONF_NEXT_ZONE_ENTRY_ID):
-                    TextSelector(TextSelectorConfig(autocomplete="off")),
+                    SelectSelector(SelectSelectorConfig(
+                        options=[{"value": "", "label": "– keine –"}] + [
+                            {"value": e.entry_id, "label": e.data.get(CONF_INSTANCE_NAME, e.entry_id)}
+                            for e in self.hass.config_entries.async_entries(DOMAIN)
+                            if e.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_ZONE and e.entry_id != self.config_entry.entry_id
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )),
             }),
         )
 
