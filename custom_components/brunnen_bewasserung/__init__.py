@@ -8,7 +8,7 @@ from .coordinator import GartenCoordinator, BrunnenBewasserungCoordinator
 from .services import async_register_services
 
 PLATFORMS_ZONE = ["sensor", "binary_sensor", "switch", "number", "time", "button", "select"]
-PLATFORMS_GARTEN = ["number_garten", "time_garten"]
+PLATFORMS_GARTEN = ["number", "time"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
