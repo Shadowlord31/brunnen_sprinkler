@@ -75,6 +75,7 @@ class GartenCoordinator(DataUpdateCoordinator):
         return self.options.get(CONF_GARTEN_NAME, "Garten")
 
     async def async_setup(self) -> bool:
+        self._setup_done = True
         return True
 
     async def async_shutdown(self) -> None:
@@ -178,6 +179,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._wind_unsub: Callable | None = None
         self._time_unsub: Callable | None = None
         self._earliest_unsub: Callable | None = None
+        self._setup_done: bool = False
 
     # --- Properties ---
 
@@ -285,6 +287,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         except Exception:
             self._earliest_unsub = None
 
+        self._setup_done = True
         return True
 
     async def async_shutdown(self) -> None:
@@ -707,6 +710,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         return max(min_s, min(duration_s, max_s))
 
     def _should_start_auto(self) -> bool:
+        if not self._setup_done:
+            return False
         if self._state != STATE_IDLE:
             return False
         if not self._enabled:
