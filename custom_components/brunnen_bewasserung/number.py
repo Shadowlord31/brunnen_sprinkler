@@ -10,7 +10,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
-    CONF_INSTANCE_NAME,
+    CONF_ENTRY_TYPE, ENTRY_TYPE_GARTEN,
+    CONF_INSTANCE_NAME, CONF_GARTEN_NAME,
     CONF_TARGET_MOISTURE,
     CONF_SECONDS_PER_PERCENT,
     CONF_MIN_RUNTIME,
@@ -18,6 +19,10 @@ from .const import (
     CONF_BLOCK_DURATION,
     CONF_PAUSE_DURATION,
     CONF_FIXED_RUNTIME, DEFAULT_FIXED_RUNTIME,
+    CONF_SOLAR_THRESHOLD, DEFAULT_SOLAR_THRESHOLD,
+    CONF_WIND_SPEED_LIMIT, DEFAULT_WIND_SPEED_LIMIT,
+    CONF_WIND_GUST_LIMIT, DEFAULT_WIND_GUST_LIMIT,
+    CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS,
     DEFAULT_TARGET_MOISTURE,
     DEFAULT_SECONDS_PER_PERCENT,
     DEFAULT_MIN_RUNTIME,
@@ -28,7 +33,7 @@ from .const import (
     CONF_CHAIN_POSITION, DEFAULT_CHAIN_POSITION,
     MODE_CHAIN, CONF_MODE,
 )
-from .coordinator import BrunnenBewasserungCoordinator
+from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator
 
 
 
@@ -96,7 +101,17 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN:
+        async_add_entities([
+            BrunnenNumber(coordinator, entry, CONF_SOLAR_THRESHOLD, "Solar-Schwellwert", "W/m²", 50, 1000, 10, "mdi:weather-sunny", DEFAULT_SOLAR_THRESHOLD),
+            BrunnenNumber(coordinator, entry, CONF_WIND_SPEED_LIMIT, "Max. Windgeschwindigkeit", "km/h", 5, 50, 1, "mdi:weather-windy", DEFAULT_WIND_SPEED_LIMIT),
+            BrunnenNumber(coordinator, entry, CONF_WIND_GUST_LIMIT, "Max. Windböe", "km/h", 5, 80, 1, "mdi:weather-windy-variant", DEFAULT_WIND_GUST_LIMIT),
+            BrunnenNumber(coordinator, entry, CONF_FLOW_PAUSE_LITERS, "Liter bis Brunnenpause", "L", 10, 2000, 10, "mdi:water-sync", DEFAULT_FLOW_PAUSE_LITERS, entity_category=EntityCategory.CONFIG),
+        ])
+        return
+
     async_add_entities([
         BrunnenNumber(coordinator, entry, CONF_TARGET_MOISTURE, "Ziel-Bodenfeuchte", "%", 10, 100, 1, "mdi:water-percent", DEFAULT_TARGET_MOISTURE),
         BrunnenNumber(coordinator, entry, CONF_SECONDS_PER_PERCENT, "Sekunden pro Prozent", "s/%", 60, 600, 5, "mdi:timer-sand", DEFAULT_SECONDS_PER_PERCENT),
@@ -111,9 +126,10 @@ async def async_setup_entry(
 
 
 def _device_info(entry: ConfigEntry) -> DeviceInfo:
+    name = entry.data.get(CONF_GARTEN_NAME) if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN else entry.data.get(CONF_INSTANCE_NAME, "Brunnen Bewässerung")
     return DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
-        name=entry.data.get(CONF_INSTANCE_NAME, "Brunnen Bewässerung"),
+        name=name,
         manufacturer="brunnen_bewasserung",
     )
 
