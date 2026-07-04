@@ -641,30 +641,33 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             )
             return
 
-        try:
-            parts = notify_service.split(".")
-            domain = parts[0]
-            service_name = ".".join(parts[1:]) if len(parts) > 1 else ""
+        async def _send():
+            try:
+                parts = notify_service.split(".")
+                domain = parts[0]
+                service_name = ".".join(parts[1:]) if len(parts) > 1 else ""
 
-            if domain == "script":
-                data = {
-                    "title": title, "message": message,
-                    "group_admins_enable": True, "group_family_enable": True,
-                    "alexa_enabled": False, "google_enabled": False, "critical_enabled": False,
-                }
-                await self.hass.services.async_call(domain, service_name, data, blocking=False)
-            elif domain == "notify":
-                await self.hass.services.async_call(
-                    "notify", "send_message",
-                    {"entity_id": notify_service, "message": message, "title": title},
-                    blocking=False,
-                )
-            else:
-                await self.hass.services.async_call(
-                    domain, service_name, {"title": title, "message": message}, blocking=False,
-                )
-        except Exception as e:
-            _LOGGER.error("Brunnen Bewässerung Notify Fehler: %s", e)
+                if domain == "script":
+                    data = {
+                        "title": title, "message": message,
+                        "group_admins_enable": True, "group_family_enable": True,
+                        "alexa_enabled": False, "google_enabled": False, "critical_enabled": False,
+                    }
+                    await self.hass.services.async_call(domain, service_name, data, blocking=False)
+                elif domain == "notify":
+                    await self.hass.services.async_call(
+                        "notify", "send_message",
+                        {"entity_id": notify_service, "message": message, "title": title},
+                        blocking=False,
+                    )
+                else:
+                    await self.hass.services.async_call(
+                        domain, service_name, {"title": title, "message": message}, blocking=False,
+                    )
+            except Exception as e:
+                _LOGGER.error("Brunnen Bewässerung Notify Fehler: %s", e)
+
+        self.hass.async_create_task(_send())
 
     # --- Runtime Calculation ---
 
