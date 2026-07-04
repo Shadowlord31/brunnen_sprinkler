@@ -354,12 +354,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
     async def async_stop_watering(self) -> None:
         was_active = self._state != STATE_IDLE
-        if was_active and self._current_block > 0:
-            # last_run speichern damit kein erneuter Auto-Start nach Neustart
-            self._last_run = now().date()
-            self.hass.async_create_task(
-                self._async_save_last_run(self._last_run.isoformat())
-            )
         self._state = STATE_IDLE  # Zuerst State setzen damit Pause-Loop abbricht
         if self._tick_task:
             self._tick_task.cancel()
