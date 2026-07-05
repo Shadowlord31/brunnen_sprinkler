@@ -8,6 +8,7 @@ from typing import Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_change,
@@ -79,17 +80,27 @@ class GartenCoordinator(DataUpdateCoordinator):
         return self._flow_counter
 
     async def async_setup(self) -> bool:
-        # Verzögert starten damit alle Zonen-Entries geladen sind
-        async def _delayed_tracking():
-            import asyncio as _asyncio
-            await _asyncio.sleep(5)
+        # Erst nach vollständigem HA-Start das Tracking einrichten
+        async def _start_tracking(_event=None):
             await self._async_update_flow_tracking()
-            # Danach alle 60s neu prüfen (falls Zonen später hinzukommen)
-            while True:
-                await _asyncio.sleep(60)
-                await self._async_update_flow_tracking()
-        self._tracking_task = self.hass.async_create_task(_delayed_tracking())
+
+        if self.hass.is_running:
+            # HA läuft bereits (z.B. Reload) → sofort starten
+            self.hass.async_create_task(_start_tracking())
+        else:
+            # Beim ersten Start: warten bis HA vollständig hochgefahren ist
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, _start_tracking
+            )
+
+        # Alle 60s neu prüfen falls neue Zonen hinzukommen
+        self._tracking_unsub = async_track_time_interval(
+            self.hass, self._async_refresh_tracking, timedelta(minutes=1)
+        )
         return True
+
+    async def _async_refresh_tracking(self, _now=None) -> None:
+        await self._async_update_flow_tracking()
 
     async def _async_update_flow_tracking(self) -> None:
         """Überwacht alle Zonen-Durchflusssensoren."""
@@ -104,9 +115,9 @@ class GartenCoordinator(DataUpdateCoordinator):
             )
 
     async def async_shutdown(self) -> None:
-        if hasattr(self, '_tracking_task') and self._tracking_task:
-            self._tracking_task.cancel()
-            self._tracking_task = None
+        if hasattr(self, '_tracking_unsub') and self._tracking_unsub:
+            self._tracking_unsub()
+            self._tracking_unsub = None
         if self._flow_unsub:
             self._flow_unsub()
             self._flow_unsub = None
