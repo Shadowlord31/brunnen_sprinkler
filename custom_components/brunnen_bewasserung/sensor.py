@@ -1,168 +1,110 @@
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTime
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
-    CONF_INSTANCE_NAME,
-    CONF_NEXT_ZONE_ENTRY_ID,
-    STATE_WATERING,
-    STATE_PAUSING,
-    STATE_WIND_HOLD,
-    STATE_WAITING_WATER,
+    DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME,
+    CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN,
 )
-from .coordinator import BrunnenBewasserungCoordinator
+from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator
 
 
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
+def _zone_device(entry): return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=entry.data.get(CONF_INSTANCE_NAME, "Zone"), manufacturer="brunnen_bewasserung")
+def _garten_device(entry): return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=entry.data.get(CONF_GARTEN_NAME, "Garten"), manufacturer="brunnen_bewasserung")
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN:
+        coordinator: GartenCoordinator = hass.data[DOMAIN][entry.entry_id]
+        async_add_entities([GartenFlowCounterSensor(coordinator, entry)])
+        return
     coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
-        BrunnenNextStartSensor(coordinator, entry),
-        BrunnenRemainingTimeSensor(coordinator, entry),
-        BrunnenStateSensor(coordinator, entry),
-        BrunnenPauseModeSensor(coordinator, entry),
-        BrunnenBlockRemainingTimeSensor(coordinator, entry),
+        StatusSensor(coordinator, entry),
+        RestSensor(coordinator, entry),
+        NextStartSensor(coordinator, entry),
+        EtappeSensor(coordinator, entry),
     ])
 
 
-def _device_info(entry: ConfigEntry) -> DeviceInfo:
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=entry.data.get(CONF_INSTANCE_NAME, "Brunnen Bewässerung"),
-        manufacturer="brunnen_bewasserung",
-    )
+class GartenFlowCounterSensor(CoordinatorEntity[GartenCoordinator], SensorEntity):
+    _attr_icon = "mdi:water-pump"
+    _attr_native_unit_of_measurement = "L"
+    _attr_device_class = "water"
 
-
-class _BrunnenSensorBase(CoordinatorEntity[BrunnenBewasserungCoordinator], SensorEntity):
-
-    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator, entry):
         super().__init__(coordinator)
-        self._entry = entry
-        self._attr_device_info = _device_info(entry)
-
-    @property
-    def available(self) -> bool:
-        return True
-
-
-class BrunnenNextStartSensor(_BrunnenSensorBase):
-
-    _attr_icon = "mdi:calendar-clock"
-
-    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_next_start"
-        self._attr_name = "Nächster Start"
-
-    @property
-    def native_value(self) -> str:
-        return self.coordinator._get_next_start_info()
-
-
-class BrunnenRemainingTimeSensor(_BrunnenSensorBase):
-
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_device_class = SensorDeviceClass.DURATION
-
-    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_remaining"
-        self._attr_name = "Restzeit"
-
-    @property
-    def native_value(self) -> float:
-        return round(self.coordinator.remaining_s / 60, 1)
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        coord = self.coordinator
-        next_zone_title: str | None = None
-        next_coord = coord._get_next_zone_coordinator()
-        if next_coord:
-            next_entry_id = coord.options.get(CONF_NEXT_ZONE_ENTRY_ID)
-            next_entry = self.hass.config_entries.async_get_entry(next_entry_id) if next_entry_id else None
-            if next_entry:
-                next_zone_title = next_entry.title
-
-        return {
-            "remaining_seconds": coord.remaining_s,
-            "current_block": coord.current_block,
-            "total_blocks": coord.total_blocks,
-            "flow_sensor_active": coord._has_flow_sensor(),
-            "next_zone": next_zone_title,
-        }
-
-
-class BrunnenStateSensor(_BrunnenSensorBase):
-
-    _STATE_ICONS = {
-        STATE_WATERING: "mdi:sprinkler-variant",
-        STATE_PAUSING: "mdi:pause-circle",
-        STATE_WIND_HOLD: "mdi:weather-windy",
-        STATE_WAITING_WATER: "mdi:water-off",
-    }
-    _DEFAULT_ICON = "mdi:sleep"
-
-    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_state"
-        self._attr_name = "Status"
-
-    @property
-    def native_value(self) -> str:
-        return self.coordinator.state
-
-    @property
-    def icon(self) -> str:
-        return self._STATE_ICONS.get(self.coordinator.state, self._DEFAULT_ICON)
-
-
-class BrunnenPauseModeSensor(_BrunnenSensorBase):
-
-    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_flow_mode"
-        self._attr_name = "Pause Modus"
-
-    @property
-    def native_value(self) -> str:
-        return "Durchfluss" if self.coordinator._has_flow_sensor() else "Zeitbasiert"
-
-    @property
-    def icon(self) -> str:
-        return "mdi:water-pump" if self.coordinator._has_flow_sensor() else "mdi:timer"
-
-
-class BrunnenBlockRemainingTimeSensor(_BrunnenSensorBase):
-    """Live-Countdown des aktuellen Bewässerungsblocks."""
-
-    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_icon = "mdi:timer-sand"
-
-    def __init__(self, coordinator: BrunnenBewasserungCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_block_remaining"
-        self._attr_name = "Aktuelle Etappe"
+        self._attr_unique_id = f"{entry.entry_id}_flow_counter"
+        self._attr_name = "Brunnen Zähler"
+        self._attr_device_info = _garten_device(entry)
 
     @property
     def native_value(self):
-        return round(self.coordinator._block_remaining_s, 0)
+        return round(self.coordinator.flow_counter, 1)
+
+
+class StatusSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], SensorEntity):
+    _attr_icon = "mdi:information"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_status"
+        self._attr_name = "Status"
+        self._attr_device_info = _zone_device(entry)
 
     @property
+    def native_value(self): return self.coordinator.state
+
+
+class RestSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], SensorEntity):
+    _attr_icon = "mdi:timer-sand"
+    _attr_native_unit_of_measurement = "min"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_restzeit"
+        self._attr_name = "Restzeit"
+        self._attr_device_info = _zone_device(entry)
+
+    @property
+    def native_value(self):
+        return round(self.coordinator.remaining_s / 60, 1)
+
+
+class NextStartSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], SensorEntity):
+    _attr_icon = "mdi:clock-start"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_next_start"
+        self._attr_name = "Nächster Start"
+        self._attr_device_info = _zone_device(entry)
+
+    @property
+    def native_value(self): return self.coordinator._get_next_start_info()
+
+
+class EtappeSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], SensorEntity):
+    _attr_icon = "mdi:timer"
+    _attr_native_unit_of_measurement = "s"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_etappe"
+        self._attr_name = "Aktuelle Etappe"
+        self._attr_device_info = _zone_device(entry)
+
+    @property
+    def native_value(self): return round(self.coordinator.block_remaining_s, 2)
+    
+    @property
     def extra_state_attributes(self):
-        return {
-            "block_remaining_seconds": self.coordinator._block_remaining_s,
-            "current_block": self.coordinator._current_block,
-            "total_blocks": self.coordinator._total_blocks,
-        }
+        c = self.coordinator
+        return {"block": c.current_block, "total_blocks": c.total_blocks}
