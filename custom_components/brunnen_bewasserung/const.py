@@ -46,6 +46,8 @@ CONF_SECONDS_PER_PERCENT = "seconds_per_percent"
 CONF_FIXED_RUNTIME = "fixed_runtime"
 CONF_AUTO_ENABLED = "auto_enabled"
 CONF_MIN_REMAINDER_BLOCK = "min_remainder_block"
+CONF_IGNORE_WIND = "ignore_wind"
+DEFAULT_IGNORE_WIND = False
 CONF_NOTIFY_SERVICE = "notify_service"
 CONF_NOTIFY_TITLE = "notify_title"
 
