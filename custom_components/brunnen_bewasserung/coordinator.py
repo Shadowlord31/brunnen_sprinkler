@@ -78,14 +78,21 @@ class GartenCoordinator(DataUpdateCoordinator):
         return self._flow_counter
 
     async def async_setup(self) -> bool:
-        # Durchflusssensor überwachen
-        sensor = self.options.get(CONF_FLOW_SENSOR)
-        if sensor:
-            self._flow_last_value = self._read_flow_sensor()
-            self._flow_unsub = async_track_state_change_event(
-                self.hass, [sensor], self._async_flow_changed
-            )
+        # Alle Zonen-Durchflusssensoren überwachen
+        await self._async_update_flow_tracking()
         return True
+
+    async def _async_update_flow_tracking(self) -> None:
+        """Überwacht alle Zonen-Durchflusssensoren."""
+        if self._flow_unsub:
+            self._flow_unsub()
+            self._flow_unsub = None
+        sensors = self._get_all_zone_flow_sensors()
+        if sensors:
+            self._flow_last_value = self._read_total_flow()
+            self._flow_unsub = async_track_state_change_event(
+                self.hass, sensors, self._async_flow_changed
+            )
 
     async def async_shutdown(self) -> None:
         if self._flow_unsub:
@@ -98,7 +105,7 @@ class GartenCoordinator(DataUpdateCoordinator):
     # --- Durchfluss-Logik ---
 
     async def _async_flow_changed(self, event) -> None:
-        new_val = self._read_flow_sensor()
+        new_val = self._read_total_flow()
         if new_val > self._flow_last_value:
             # Durchfluss hat sich erhöht → aufaddieren
             self._flow_counter += new_val - self._flow_last_value
@@ -121,24 +128,43 @@ class GartenCoordinator(DataUpdateCoordinator):
         # Kein Durchfluss für X Minuten → Reset
         _LOGGER.debug("Brunnen: Kein Durchfluss für %.0f Min. → Zähler reset.", timeout_min)
         self._flow_counter = 0.0
-        self._flow_last_value = self._read_flow_sensor()
+        self._flow_last_value = self._read_total_flow()
         self.async_update_listeners()
 
-    def _read_flow_sensor(self) -> float:
-        sensor = self.options.get(CONF_FLOW_SENSOR)
-        if not sensor:
-            return 0.0
-        try:
-            return float(self.hass.states.get(sensor).state)
-        except (ValueError, AttributeError):
-            return 0.0
+    def _get_all_zone_flow_sensors(self) -> list[str]:
+        """Gibt alle konfigurierten Zonen-Durchflusssensoren zurück."""
+        sensors = []
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if isinstance(coord, BrunnenBewasserungCoordinator):
+                parent = coord.options.get(CONF_PARENT_ENTRY_ID)
+                if parent == self._config_entry.entry_id:
+                    sensor = coord.options.get(CONF_FLOW_SENSOR)
+                    if sensor:
+                        sensors.append(sensor)
+        return sensors
+
+    def _read_total_flow(self) -> float:
+        """Summiert den aktuellen Durchfluss aller Zonen."""
+        total = 0.0
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if isinstance(coord, BrunnenBewasserungCoordinator):
+                parent = coord.options.get(CONF_PARENT_ENTRY_ID)
+                if parent == self._config_entry.entry_id:
+                    sensor = coord.options.get(CONF_FLOW_SENSOR)
+                    if sensor:
+                        try:
+                            total += float(self.hass.states.get(sensor).state)
+                        except (ValueError, AttributeError):
+                            pass
+        return total
 
     def get_flow_since(self, start_value: float) -> float:
         """Liter seit einem bestimmten Startwert des Zählers."""
         return max(0.0, self._flow_counter - start_value)
 
     def has_flow_sensor(self) -> bool:
-        return bool(self.options.get(CONF_FLOW_SENSOR))
+        """True wenn mindestens eine Zone einen Durchflusssensor hat."""
+        return len(self._get_all_zone_flow_sensors()) > 0
 
     def get_flow_pause_liters(self) -> float:
         return float(self.options.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS))
