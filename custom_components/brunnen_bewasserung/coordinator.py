@@ -127,15 +127,25 @@ class GartenCoordinator(DataUpdateCoordinator):
                 self._flow_idle_task = None
             self._flow_last_value = new_val
         elif new_val == 0 and self._flow_last_value > 0:
-            # Sensor auf 0 zurückgegangen (Lauf-Ende) → Idle-Timer starten
+            # Sensor auf 0 → nur Timer starten wenn keine Zone aktiv
             self._flow_last_value = 0.0
-            if self._flow_idle_task is None or self._flow_idle_task.done():
-                self._flow_idle_task = self.hass.async_create_task(
-                    self._async_flow_idle_countdown()
-                )
-        # Sonst (z.B. unknown): nichts tun
+            if not self._any_zone_active():
+                if self._flow_idle_task is None or self._flow_idle_task.done():
+                    self._flow_idle_task = self.hass.async_create_task(
+                        self._async_flow_idle_countdown()
+                    )
+        # Sonst (unknown, gleicher Wert): nichts tun
 
         self.async_update_listeners()
+
+    def _any_zone_active(self) -> bool:
+        """True wenn mindestens eine Zone gerade aktiv ist (watering/manual/pausing)."""
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if isinstance(coord, BrunnenBewasserungCoordinator):
+                if coord.options.get(CONF_PARENT_ENTRY_ID) == self._config_entry.entry_id:
+                    if coord.state in (STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER):
+                        return True
+        return False
 
     async def _async_flow_idle_countdown(self) -> None:
         timeout_min = float(self.options.get(CONF_FLOW_IDLE_TIMEOUT, DEFAULT_FLOW_IDLE_TIMEOUT))
