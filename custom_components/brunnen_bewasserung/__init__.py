@@ -8,7 +8,7 @@ from .coordinator import GartenCoordinator, BrunnenBewasserungCoordinator
 from .services import async_register_services
 
 PLATFORMS_ZONE = ["sensor", "binary_sensor", "switch", "number", "time", "button", "select"]
-PLATFORMS_GARTEN = ["number", "time"]
+PLATFORMS_GARTEN = ["number", "time", "sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -34,7 +34,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = hass.data[DOMAIN].get(entry.entry_id)
     if coordinator:
         await coordinator.async_shutdown()
-
     platforms = PLATFORMS_GARTEN if entry_type == ENTRY_TYPE_GARTEN else PLATFORMS_ZONE
     unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms)
     if unload_ok:
