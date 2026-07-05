@@ -38,6 +38,7 @@ from .const import (
     CONF_FIXED_RUNTIME, DEFAULT_FIXED_RUNTIME,
     CONF_AUTO_ENABLED, DEFAULT_AUTO_ENABLED,
     CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK,
+    CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND,
     CONF_NOTIFY_SERVICE, CONF_NOTIFY_TITLE,
     CONF_NOTIFY_ON_START, CONF_NOTIFY_ON_FINISH, CONF_NOTIFY_ON_BLOCK_PAUSE,
     CONF_NOTIFY_ON_STOP, CONF_NOTIFY_ON_WIND, CONF_NOTIFY_ON_NO_WATER_NEEDED,
@@ -608,6 +609,9 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     # --- Wind ---
 
     async def _async_check_wind(self, _event) -> None:
+        # Windpause für diese Zone ignorieren?
+        if self.options.get(CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND):
+            return
         garten = self.get_garten()
         if not garten:
             return
