@@ -84,7 +84,11 @@ class GartenCoordinator(DataUpdateCoordinator):
             import asyncio as _asyncio
             await _asyncio.sleep(5)
             await self._async_update_flow_tracking()
-        self.hass.async_create_task(_delayed_tracking())
+            # Danach alle 60s neu prüfen (falls Zonen später hinzukommen)
+            while True:
+                await _asyncio.sleep(60)
+                await self._async_update_flow_tracking()
+        self._tracking_task = self.hass.async_create_task(_delayed_tracking())
         return True
 
     async def _async_update_flow_tracking(self) -> None:
@@ -100,6 +104,9 @@ class GartenCoordinator(DataUpdateCoordinator):
             )
 
     async def async_shutdown(self) -> None:
+        if hasattr(self, '_tracking_task') and self._tracking_task:
+            self._tracking_task.cancel()
+            self._tracking_task = None
         if self._flow_unsub:
             self._flow_unsub()
             self._flow_unsub = None
