@@ -79,8 +79,12 @@ class GartenCoordinator(DataUpdateCoordinator):
         return self._flow_counter
 
     async def async_setup(self) -> bool:
-        # Alle Zonen-Durchflusssensoren überwachen
-        await self._async_update_flow_tracking()
+        # Verzögert starten damit alle Zonen-Entries geladen sind
+        async def _delayed_tracking():
+            import asyncio as _asyncio
+            await _asyncio.sleep(5)
+            await self._async_update_flow_tracking()
+        self.hass.async_create_task(_delayed_tracking())
         return True
 
     async def _async_update_flow_tracking(self) -> None:
