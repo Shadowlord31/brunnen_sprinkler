@@ -658,6 +658,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     async def _async_background_check(self, _now) -> None:
         if not self._setup_done:
             return
+        self.async_update_listeners()  # Nächster-Start Sensor aktuell halten
         if self._should_start_auto():
             await self.async_start_watering()
 
@@ -877,8 +878,11 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         earliest = garten.get_earliest_start()
         if not earliest:
             return "Unbekannt"
-        if now().time() >= earliest and garten.get_solar_ok():
-            return "Jetzt"
-        if now().time() >= earliest:
-            return "Wartet auf Sonne"
-        return f"{earliest.strftime('%H:%M')} Uhr"
+        if now().time() < earliest:
+            return f"{earliest.strftime('%H:%M')} Uhr"
+        # Zeit >= Frühestzeit
+        if not garten.get_wind_ok():
+            return "Wind zu stark"
+        if not garten.get_solar_ok():
+            return "Wartet auf weniger Sonne"
+        return "Jetzt"
