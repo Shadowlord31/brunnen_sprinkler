@@ -118,21 +118,24 @@ class GartenCoordinator(DataUpdateCoordinator):
 
     async def _async_flow_changed(self, event) -> None:
         new_val = self._read_total_flow()
+
         if new_val > self._flow_last_value:
-            # Durchfluss hat sich erhöht → aufaddieren
+            # Durchfluss hat sich erhöht → aufaddieren + Idle-Timer abbrechen
             self._flow_counter += new_val - self._flow_last_value
-            # Idle-Timer abbrechen
             if self._flow_idle_task and not self._flow_idle_task.done():
                 self._flow_idle_task.cancel()
                 self._flow_idle_task = None
-        self._flow_last_value = new_val
-        self.async_update_listeners()
+            self._flow_last_value = new_val
+        elif new_val == 0 and self._flow_last_value > 0:
+            # Sensor auf 0 zurückgegangen (Lauf-Ende) → Idle-Timer starten
+            self._flow_last_value = 0.0
+            if self._flow_idle_task is None or self._flow_idle_task.done():
+                self._flow_idle_task = self.hass.async_create_task(
+                    self._async_flow_idle_countdown()
+                )
+        # Sonst (z.B. unknown): nichts tun
 
-        # Idle-Timer (neu) starten
-        if self._flow_idle_task is None or self._flow_idle_task.done():
-            self._flow_idle_task = self.hass.async_create_task(
-                self._async_flow_idle_countdown()
-            )
+        self.async_update_listeners()
 
     async def _async_flow_idle_countdown(self) -> None:
         timeout_min = float(self.options.get(CONF_FLOW_IDLE_TIMEOUT, DEFAULT_FLOW_IDLE_TIMEOUT))
