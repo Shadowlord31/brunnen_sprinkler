@@ -79,7 +79,6 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_MIN_RUNTIME, default=DEFAULT_MIN_RUNTIME): NumberSelector(_N(min=1, max=30, step=1, unit_of_measurement="min", mode=_NM.BOX)),
             vol.Required(CONF_MAX_RUNTIME, default=DEFAULT_MAX_RUNTIME): NumberSelector(_N(min=10, max=180, step=5, unit_of_measurement="min", mode=_NM.BOX)),
             vol.Optional(CONF_MAIN_PUMP_SWITCH): EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
-            vol.Optional(CONF_FLOW_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Required(CONF_FLOW_PAUSE_LITERS, default=DEFAULT_FLOW_PAUSE_LITERS): NumberSelector(_N(min=10, max=2000, step=10, unit_of_measurement="L", mode=_NM.BOX)),
             vol.Required(CONF_FLOW_IDLE_TIMEOUT, default=DEFAULT_FLOW_IDLE_TIMEOUT): NumberSelector(_N(min=5, max=60, step=5, unit_of_measurement="min", mode=_NM.BOX)),
             vol.Required(CONF_GIESS_ENABLED, default=True): BooleanSelector(),
@@ -101,6 +100,7 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_INSTANCE_NAME, default="Zone"): TextSelector(),
             vol.Required(CONF_PUMP_SWITCH): EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
             vol.Optional(CONF_MOISTURE_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_FLOW_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Required(CONF_AUTO_ENABLED, default=DEFAULT_AUTO_ENABLED): BooleanSelector(),
         }))
 
@@ -150,7 +150,6 @@ class BrunnenOptionsFlow(config_entries.OptionsFlow):
             vol.Required(CONF_FLOW_PAUSE_LITERS, default=d.get(CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS)): NumberSelector(_N(min=10, max=2000, step=10, unit_of_measurement="L", mode=_NM.BOX)),
             vol.Required(CONF_FLOW_IDLE_TIMEOUT, default=d.get(CONF_FLOW_IDLE_TIMEOUT, DEFAULT_FLOW_IDLE_TIMEOUT)): NumberSelector(_N(min=5, max=60, step=5, unit_of_measurement="min", mode=_NM.BOX)),
             vol.Optional(CONF_MAIN_PUMP_SWITCH): EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
-            vol.Optional(CONF_FLOW_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Required(CONF_GIESS_ENABLED, default=d.get(CONF_GIESS_ENABLED, True)): BooleanSelector(),
             vol.Optional(CONF_GIESS_SENSOR): EntitySelector(EntitySelectorConfig(domain=["sensor", "binary_sensor", "input_boolean"])),
         }))
@@ -175,6 +174,7 @@ class BrunnenOptionsFlow(config_entries.OptionsFlow):
         ]
         return self.async_show_form(step_id="zone", data_schema=vol.Schema({
             vol.Optional(CONF_MOISTURE_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_FLOW_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Required(CONF_AUTO_ENABLED, default=d.get(CONF_AUTO_ENABLED, DEFAULT_AUTO_ENABLED)): BooleanSelector(),
             vol.Optional(CONF_NOTIFY_SERVICE): EntitySelector(EntitySelectorConfig(domain=["notify", "script"])),
         }))
