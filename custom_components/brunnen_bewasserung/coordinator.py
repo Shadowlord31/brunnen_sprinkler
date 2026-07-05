@@ -373,18 +373,26 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self.hass, self._async_background_check, _CHECK_INTERVAL
         )
 
-        if garten:
-            earliest = garten.get_earliest_start()
-            if earliest:
-                try:
+        async def _register_time_trigger(_event=None):
+            garten = self.get_garten()
+            if garten:
+                earliest = garten.get_earliest_start()
+                if earliest:
+                    if self._earliest_unsub:
+                        self._earliest_unsub()
                     self._earliest_unsub = async_track_time_change(
                         self.hass, self._async_background_check,
                         hour=earliest.hour, minute=earliest.minute, second=0
                     )
-                except Exception:
-                    pass
+            self._setup_done = True
 
-        self._setup_done = True
+        if self.hass.is_running:
+            await _register_time_trigger()
+        else:
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, _register_time_trigger
+            )
+
         return True
 
     async def async_shutdown(self) -> None:
