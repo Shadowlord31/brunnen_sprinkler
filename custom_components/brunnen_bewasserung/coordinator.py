@@ -25,6 +25,7 @@ from .const import (
     CONF_MAIN_PUMP_SWITCH, CONF_FLOW_SENSOR,
     CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS,
     CONF_FLOW_IDLE_TIMEOUT, DEFAULT_FLOW_IDLE_TIMEOUT,
+    CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF,
     CONF_SOLAR_SENSOR, CONF_WIND_SPEED_SENSOR, CONF_WIND_GUST_SENSOR,
     CONF_WIND_SPEED_LIMIT, CONF_WIND_GUST_LIMIT,
     DEFAULT_WIND_SPEED_LIMIT, DEFAULT_WIND_GUST_LIMIT,
@@ -266,6 +267,8 @@ class GartenCoordinator(DataUpdateCoordinator):
             await asyncio.sleep(2)
 
     async def async_main_pump_off(self) -> None:
+        if not self.options.get(CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF):
+            return  # Pumpe wird extern gesteuert
         pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
         if pump:
             await self.hass.services.async_call(
