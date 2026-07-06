@@ -430,10 +430,17 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         self._flow_value_at_start = garten.flow_counter if garten else 0.0
 
-        block_s_raw = (garten.get_block_duration() if garten else DEFAULT_BLOCK_DURATION) * 60
         import math
-        block_s = min(runtime_s, block_s_raw)
-        self._total_blocks = ceil(runtime_s / block_s) if not math.isinf(runtime_s) else 0
+        if garten and garten.has_flow_sensor():
+            # Mit Durchflussmesser: kein Block-Split, Zone läuft durch
+            block_s = runtime_s
+            self._total_blocks = 1 if not math.isinf(runtime_s) else 0
+        else:
+            # Ohne Durchflussmesser: Block-Split für Brunnen-Erholung
+            block_s_raw = (garten.get_block_duration() if garten else DEFAULT_BLOCK_DURATION) * 60
+            block_s = min(runtime_s, block_s_raw)
+            self._total_blocks = ceil(runtime_s / block_s) if not math.isinf(runtime_s) else 0
+
         self._current_block = 1
         self._remaining_s = max(0.0, runtime_s - block_s) if not math.isinf(runtime_s) else float("inf")
 
@@ -528,25 +535,32 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                         await self._async_notify(message="Bewässerung abgeschlossen.")
                     break
 
+                # Brunnenpause nach Durchfluss-Limit
                 if garten and garten.has_flow_sensor():
                     await self._async_run_pause_flow(garten)
+                    # Nach Pause: weiter mit Rest-Laufzeit (kein Block-Split)
+                    if self._state == STATE_IDLE:
+                        break
+                    # Startwert aktualisieren für nächsten Durchfluss-Zyklus
+                    self._flow_value_at_start = garten.flow_counter
+                    self._current_block += 1
+                    # Restlaufzeit bleibt unverändert - Block läuft weiter
                 else:
+                    # Ohne Durchflussmesser: Zeit-basierte Blocks
                     await self._async_run_pause_time(garten)
-
-                if self._state == STATE_IDLE:
-                    break
-
-                self._current_block += 1
-                if not infinite:
-                    min_block_s = float(self.options.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)) * 60
-                    next_block_s = min(self._remaining_s, block_duration_s)
-                    self._remaining_s -= next_block_s
-                    if 0 < self._remaining_s < min_block_s:
-                        next_block_s += self._remaining_s
-                        self._remaining_s = 0.0
-                    current_block_s = next_block_s
-                else:
-                    current_block_s = block_duration_s
+                    if self._state == STATE_IDLE:
+                        break
+                    self._current_block += 1
+                    if not infinite:
+                        min_block_s = float(self.options.get(CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK)) * 60
+                        next_block_s = min(self._remaining_s, block_duration_s)
+                        self._remaining_s -= next_block_s
+                        if 0 < self._remaining_s < min_block_s:
+                            next_block_s += self._remaining_s
+                            self._remaining_s = 0.0
+                        current_block_s = next_block_s
+                    else:
+                        current_block_s = block_duration_s
 
         except asyncio.CancelledError:
             pass
