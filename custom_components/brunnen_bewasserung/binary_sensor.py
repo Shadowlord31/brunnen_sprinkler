@@ -88,26 +88,34 @@ class GartenAktivSensor(BinarySensorEntity):
         self._unsubs = []
 
     async def async_added_to_hass(self) -> None:
-        """Alle Zonen-Koordinatoren abonnieren."""
-        from homeassistant.helpers.event import async_track_state_change_event
-        # Status-Sensoren aller Zonen dieses Gartens beobachten
-        zone_status_entities = []
-        for coord in self.hass.data.get(DOMAIN, {}).values():
-            if isinstance(coord, BrunnenBewasserungCoordinator):
-                if coord.options.get(CONF_PARENT_ENTRY_ID) == self._entry.entry_id:
-                    # Koordinator-Updates abonnieren
-                    self._unsubs.append(
-                        coord.async_add_listener(self.async_write_ha_state)
-                    )
-        if not self._unsubs:
-            # Fallback: alle 30s prüfen
-            from datetime import timedelta
-            from homeassistant.helpers.event import async_track_time_interval
-            self._unsubs.append(
-                async_track_time_interval(
-                    self.hass, lambda _: self.async_write_ha_state(), timedelta(seconds=30)
-                )
+        """Zonen-Koordinatoren abonnieren – mit Fallback-Polling."""
+        from datetime import timedelta
+        from homeassistant.helpers.event import async_track_time_interval
+
+        def _update_subscriptions():
+            """Neue Zonen-Koordinatoren finden und abonnieren."""
+            for coord in self.hass.data.get(DOMAIN, {}).values():
+                if isinstance(coord, BrunnenBewasserungCoordinator):
+                    if coord.options.get(CONF_PARENT_ENTRY_ID) == self._entry.entry_id:
+                        if coord not in self._subscribed_coords:
+                            self._subscribed_coords.add(coord)
+                            self._unsubs.append(
+                                coord.async_add_listener(self.async_write_ha_state)
+                            )
+
+        self._subscribed_coords = set()
+        _update_subscriptions()
+
+        # Alle 10s prüfen ob neue Zonen dazugekommen sind + State aktualisieren
+        def _tick(_now=None):
+            _update_subscriptions()
+            self.async_write_ha_state()
+
+        self._unsubs.append(
+            async_track_time_interval(
+                self.hass, _tick, timedelta(seconds=10)
             )
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         for unsub in self._unsubs:
