@@ -132,21 +132,22 @@ class GartenCoordinator(DataUpdateCoordinator):
         new_val = self._read_total_flow()
 
         if new_val > self._flow_last_value:
-            # Durchfluss hat sich erhöht → aufaddieren + Idle-Timer abbrechen
-            self._flow_counter += new_val - self._flow_last_value
+            # Durchfluss hat sich erhöht → Differenz aufaddieren
+            diff = new_val - self._flow_last_value
+            self._flow_counter += diff
+            self._flow_last_value = new_val
+            # Idle-Timer abbrechen und neu starten
             if self._flow_idle_task and not self._flow_idle_task.done():
                 self._flow_idle_task.cancel()
                 self._flow_idle_task = None
+            self._flow_idle_task = self.hass.async_create_task(
+                self._async_flow_idle_countdown()
+            )
+        elif new_val < self._flow_last_value:
+            # Sensor wurde zurückgesetzt (z.B. Gerät neu gestartet)
+            # Neuen Ausgangspunkt setzen, nicht addieren
             self._flow_last_value = new_val
-        elif new_val == 0 and self._flow_last_value > 0:
-            # Sensor auf 0 → nur Timer starten wenn keine Zone aktiv
-            self._flow_last_value = 0.0
-            if not self._any_zone_active():
-                if self._flow_idle_task is None or self._flow_idle_task.done():
-                    self._flow_idle_task = self.hass.async_create_task(
-                        self._async_flow_idle_countdown()
-                    )
-        # Sonst (unknown, gleicher Wert): nichts tun
+        # Gleicher Wert: nichts tun
 
         self.async_update_listeners()
 
@@ -166,13 +167,16 @@ class GartenCoordinator(DataUpdateCoordinator):
         return False
 
     async def _async_flow_idle_countdown(self) -> None:
-        timeout_min = float(self.options.get(CONF_FLOW_IDLE_TIMEOUT, DEFAULT_FLOW_IDLE_TIMEOUT))
-        await asyncio.sleep(timeout_min * 60)
-        # Kein Durchfluss für X Minuten → Reset
-        _LOGGER.debug("Brunnen: Kein Durchfluss für %.0f Min. → Zähler reset.", timeout_min)
-        self._flow_counter = 0.0
-        self._flow_last_value = self._read_total_flow()
-        self.async_update_listeners()
+        """Wartet X Minuten ohne Durchfluss-Änderung dann Reset."""
+        try:
+            timeout_min = float(self.options.get(CONF_FLOW_IDLE_TIMEOUT, DEFAULT_FLOW_IDLE_TIMEOUT))
+            await asyncio.sleep(timeout_min * 60)
+            _LOGGER.debug("Brunnen: Kein Durchfluss für %.0f Min. → Zähler reset.", timeout_min)
+            self._flow_counter = 0.0
+            self._flow_last_value = self._read_total_flow()
+            self.async_update_listeners()
+        except asyncio.CancelledError:
+            pass  # Timer wurde abgebrochen weil neuer Durchfluss kam
 
     def _get_all_zone_flow_sensors(self) -> list[str]:
         """Gibt alle konfigurierten Zonen-Durchflusssensoren zurück."""
