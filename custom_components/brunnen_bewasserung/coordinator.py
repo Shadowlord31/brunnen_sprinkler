@@ -350,6 +350,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         coord = self.hass.data.get(DOMAIN, {}).get(parent_id)
         return coord if isinstance(coord, GartenCoordinator) else None
 
+    def _zone_has_flow_sensor(self) -> bool:
+        """Prüft direkt in den Zone-Options ob ein Durchflussmesser konfiguriert ist."""
+        return bool(self.options.get(CONF_FLOW_SENSOR))
+
     # --- Setup ---
 
     async def async_setup(self) -> bool:
@@ -437,7 +441,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._flow_value_at_start = garten.flow_counter if garten else 0.0
 
         import math
-        if garten and garten.has_flow_sensor():
+        if self._zone_has_flow_sensor():
             # Mit Durchflussmesser: kein Block-Split, Zone läuft durch
             block_s = runtime_s
             self._total_blocks = 1 if not math.isinf(runtime_s) else 0
@@ -542,7 +546,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     break
 
                 # Brunnenpause nach Durchfluss-Limit
-                if garten and garten.has_flow_sensor():
+                if self._zone_has_flow_sensor() and garten:
                     await self._async_run_pause_flow(garten)
                     # Nach Pause: weiter mit Rest-Laufzeit (kein Block-Split)
                     if self._state == STATE_IDLE:
@@ -578,7 +582,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         try:
             while self._state == STATE_MANUAL:
                 await asyncio.sleep(5)
-                if not garten or not garten.has_flow_sensor():
+                if not self._zone_has_flow_sensor() or not garten:
                     continue
                 flow_since = garten.get_flow_since(self._flow_value_at_start)
                 limit = garten.get_flow_pause_liters()
@@ -621,7 +625,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 elapsed += step
                 if not infinite:
                     self._block_remaining_s = max(0.0, duration_s - elapsed)
-                if garten and garten.has_flow_sensor():
+                if self._zone_has_flow_sensor() and garten:
                     if garten.get_flow_since(self._flow_value_at_start) >= flow_limit:
                         self.async_update_listeners()
                         return
