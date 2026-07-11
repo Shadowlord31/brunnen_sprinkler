@@ -140,7 +140,20 @@ class GartenCoordinator(DataUpdateCoordinator):
     # --- Durchfluss-Logik ---
 
     async def _async_flow_changed(self, event) -> None:
+        # unavailable/unknown ignorieren
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in ("unavailable", "unknown", ""):
+            return
+
         new_val = self._read_total_flow()
+        if new_val <= 0:
+            return  # Noch nicht bereit
+
+        if self._flow_last_value <= 0:
+            # Erster gültiger Wert nach Start/Neustart → nur Ausgangspunkt setzen
+            self._flow_last_value = new_val
+            self.async_update_listeners()
+            return
 
         if new_val > self._flow_last_value:
             # Durchfluss hat sich erhöht → Differenz aufaddieren
@@ -155,8 +168,7 @@ class GartenCoordinator(DataUpdateCoordinator):
                 self._async_flow_idle_countdown()
             )
         elif new_val < self._flow_last_value:
-            # Sensor wurde zurückgesetzt (z.B. Gerät neu gestartet)
-            # Neuen Ausgangspunkt setzen, nicht addieren
+            # Sensor-Wert gesunken (Geräte-Neustart) → nur Ausgangspunkt updaten
             self._flow_last_value = new_val
         # Gleicher Wert: nichts tun
 
