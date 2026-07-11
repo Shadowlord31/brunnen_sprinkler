@@ -151,12 +151,15 @@ class GartenCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
     def _any_zone_active(self) -> bool:
-        """True wenn mindestens eine Zone gerade aktiv ist (watering/manual/pausing)."""
-        for coord in self.hass.data.get(DOMAIN, {}).values():
-            if isinstance(coord, BrunnenBewasserungCoordinator):
-                if coord.options.get(CONF_PARENT_ENTRY_ID) == self._config_entry.entry_id:
-                    if coord.state in (STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER):
-                        return True
+        """True wenn mindestens eine Zone dieses Gartens gerade aktiv ist."""
+        from .coordinator import BrunnenBewasserungCoordinator as _ZoneCoord
+        for entry_id, coord in self.hass.data.get(DOMAIN, {}).items():
+            if not isinstance(coord, _ZoneCoord):
+                continue
+            if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
+                continue
+            if coord.state in (STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER):
+                return True
         return False
 
     async def _async_flow_idle_countdown(self) -> None:
