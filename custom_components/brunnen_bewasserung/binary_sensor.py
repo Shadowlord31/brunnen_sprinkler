@@ -8,17 +8,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN, CONF_INSTANCE_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE,
+    DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN,
     STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD,
 )
-from .coordinator import BrunnenBewasserungCoordinator
+from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator
 
 
-def _device_info(entry): return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=entry.data.get(CONF_INSTANCE_NAME, "Zone"), manufacturer="brunnen_bewasserung")
+def _device_info(entry): return DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=entry.data.get(CONF_GARTEN_NAME) if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN else entry.data.get(CONF_INSTANCE_NAME, "Zone"), manufacturer="brunnen_bewasserung")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    if entry.data.get(CONF_ENTRY_TYPE) != ENTRY_TYPE_ZONE:
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN:
+        coordinator: GartenCoordinator = hass.data[DOMAIN][entry.entry_id]
+        async_add_entities([GartenAktivSensor(coordinator, entry)])
         return
     coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
@@ -66,3 +68,18 @@ class WindHoldSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], BinarySen
 
     @property
     def is_on(self): return self.coordinator.state == STATE_WIND_HOLD
+
+
+class GartenAktivSensor(CoordinatorEntity[GartenCoordinator], BinarySensorEntity):
+    _attr_icon = "mdi:sprinkler-variant"
+    _attr_device_class = "running"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_bewasserung_aktiv"
+        self._attr_name = "Bewässerung aktiv"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator._any_zone_active()
