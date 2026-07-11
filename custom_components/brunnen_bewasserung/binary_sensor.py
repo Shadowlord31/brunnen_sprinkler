@@ -8,7 +8,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN,
+    DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN, CONF_PARENT_ENTRY_ID,
     STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD,
 )
 from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator
@@ -70,12 +70,14 @@ class WindHoldSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], BinarySen
     def is_on(self): return self.coordinator.state == STATE_WIND_HOLD
 
 
-class GartenAktivSensor(CoordinatorEntity[GartenCoordinator], BinarySensorEntity):
+class GartenAktivSensor(BinarySensorEntity):
     _attr_icon = "mdi:sprinkler-variant"
     _attr_device_class = "running"
+    _attr_should_poll = False
 
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator)
+    def __init__(self, coordinator: GartenCoordinator, entry):
+        self._coordinator = coordinator
+        self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_bewasserung_aktiv"
         self._attr_name = "Bewässerung aktiv"
         self._attr_device_info = DeviceInfo(
@@ -83,7 +85,35 @@ class GartenAktivSensor(CoordinatorEntity[GartenCoordinator], BinarySensorEntity
             name=entry.data.get(CONF_GARTEN_NAME, "Garten"),
             manufacturer="brunnen_bewasserung",
         )
+        self._unsubs = []
+
+    async def async_added_to_hass(self) -> None:
+        """Alle Zonen-Koordinatoren abonnieren."""
+        from homeassistant.helpers.event import async_track_state_change_event
+        # Status-Sensoren aller Zonen dieses Gartens beobachten
+        zone_status_entities = []
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if isinstance(coord, BrunnenBewasserungCoordinator):
+                if coord.options.get(CONF_PARENT_ENTRY_ID) == self._entry.entry_id:
+                    # Koordinator-Updates abonnieren
+                    self._unsubs.append(
+                        coord.async_add_listener(self.async_write_ha_state)
+                    )
+        if not self._unsubs:
+            # Fallback: alle 30s prüfen
+            from datetime import timedelta
+            from homeassistant.helpers.event import async_track_time_interval
+            self._unsubs.append(
+                async_track_time_interval(
+                    self.hass, lambda _: self.async_write_ha_state(), timedelta(seconds=30)
+                )
+            )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator._any_zone_active()
+        return self._coordinator._any_zone_active()
