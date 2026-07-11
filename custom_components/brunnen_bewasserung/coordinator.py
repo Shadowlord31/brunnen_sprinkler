@@ -152,13 +152,16 @@ class GartenCoordinator(DataUpdateCoordinator):
 
     def _any_zone_active(self) -> bool:
         """True wenn mindestens eine Zone dieses Gartens gerade aktiv ist."""
-        from .coordinator import BrunnenBewasserungCoordinator as _ZoneCoord
-        for entry_id, coord in self.hass.data.get(DOMAIN, {}).items():
-            if not isinstance(coord, _ZoneCoord):
+        active_states = {STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER}
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            # Prüfe ob es ein Zonen-Coordinator ist (hat CONF_PARENT_ENTRY_ID)
+            if not hasattr(coord, '_state'):
+                continue
+            if not hasattr(coord, 'options'):
                 continue
             if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
                 continue
-            if coord.state in (STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER):
+            if coord._state in active_states:
                 return True
         return False
 
