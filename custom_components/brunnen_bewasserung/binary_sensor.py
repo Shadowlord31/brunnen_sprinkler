@@ -78,7 +78,11 @@ class GartenAktivSensor(CoordinatorEntity[GartenCoordinator], BinarySensorEntity
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_bewasserung_aktiv"
         self._attr_name = "Bewässerung aktiv"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.data.get(CONF_GARTEN_NAME, "Garten"),
+            manufacturer="brunnen_bewasserung",
+        )
 
     @property
     def is_on(self) -> bool:
