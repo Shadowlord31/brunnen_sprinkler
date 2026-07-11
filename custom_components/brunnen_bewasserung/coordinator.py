@@ -562,6 +562,19 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 await self._async_pump_off()
 
                 remaining = self._remaining_s
+
+                # Durchfluss-Check: auch nach Block-Ende prüfen
+                # (MQTT-Updates kommen verzögert vom Sonoff)
+                if self._zone_has_flow_sensor() and garten:
+                    flow_since = garten.get_flow_since(self._flow_value_at_start)
+                    if flow_since >= garten.get_flow_pause_liters():
+                        await self._async_run_pause_flow(garten)
+                        if self._state == STATE_IDLE:
+                            break
+                        self._flow_value_at_start = garten.flow_counter
+                        self._current_block += 1
+                        continue
+
                 if not infinite and remaining <= 0:
                     self._state = STATE_IDLE
                     self._current_block = 0
