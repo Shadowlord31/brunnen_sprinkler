@@ -95,13 +95,15 @@ class GartenAktivSensor(BinarySensorEntity):
         def _update_subscriptions():
             """Neue Zonen-Koordinatoren finden und abonnieren."""
             for coord in self.hass.data.get(DOMAIN, {}).values():
-                if isinstance(coord, BrunnenBewasserungCoordinator):
-                    if coord.options.get(CONF_PARENT_ENTRY_ID) == self._entry.entry_id:
-                        if coord not in self._subscribed_coords:
-                            self._subscribed_coords.add(coord)
-                            self._unsubs.append(
-                                coord.async_add_listener(self.async_write_ha_state)
-                            )
+                # Zonen-Coordinator hat CONF_PARENT_ENTRY_ID + _state
+                if not hasattr(coord, '_state') or not hasattr(coord, 'options'):
+                    continue
+                if coord.options.get(CONF_PARENT_ENTRY_ID) == self._entry.entry_id:
+                    if coord not in self._subscribed_coords:
+                        self._subscribed_coords.add(coord)
+                        self._unsubs.append(
+                            coord.async_add_listener(self.async_write_ha_state)
+                        )
 
         self._subscribed_coords = set()
         _update_subscriptions()
