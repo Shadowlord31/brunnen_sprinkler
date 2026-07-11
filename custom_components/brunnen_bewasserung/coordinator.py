@@ -105,14 +105,23 @@ class GartenCoordinator(DataUpdateCoordinator):
 
     async def _async_update_flow_tracking(self) -> None:
         """Überwacht alle Zonen-Durchflusssensoren."""
+        old_sensors = set()
         if self._flow_unsub:
+            # Merken welche Sensoren bereits getrackt werden
+            old_sensors = set(self._get_all_zone_flow_sensors())
             self._flow_unsub()
             self._flow_unsub = None
+
         sensors = self._get_all_zone_flow_sensors()
         if sensors:
-            # Startwert merken - Zähler beginnt bei 0
-            self._flow_counter = 0.0
-            self._flow_last_value = self._read_total_flow()
+            new_sensors = set(sensors)
+            # Nur bei neuen Sensoren den last_value aktualisieren
+            if new_sensors != old_sensors:
+                # Neue Sensoren → last_value neu setzen
+                self._flow_last_value = self._read_total_flow()
+                if not old_sensors:
+                    # Erster Start → Zähler auf 0
+                    self._flow_counter = 0.0
             self._flow_unsub = async_track_state_change_event(
                 self.hass, sensors, self._async_flow_changed
             )
