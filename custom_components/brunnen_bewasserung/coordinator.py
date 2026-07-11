@@ -110,6 +110,8 @@ class GartenCoordinator(DataUpdateCoordinator):
             self._flow_unsub = None
         sensors = self._get_all_zone_flow_sensors()
         if sensors:
+            # Startwert merken - Zähler beginnt bei 0
+            self._flow_counter = 0.0
             self._flow_last_value = self._read_total_flow()
             self._flow_unsub = async_track_state_change_event(
                 self.hass, sensors, self._async_flow_changed
