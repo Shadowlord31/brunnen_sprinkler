@@ -573,6 +573,16 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                             break
                         self._flow_value_at_start = garten.flow_counter
                         self._current_block += 1
+                        # Nach Pause: Lauf beendet wenn keine Restzeit mehr
+                        if not infinite and self._remaining_s <= 0:
+                            self._state = STATE_IDLE
+                            self._current_block = 0
+                            self._last_run = now().date()
+                            await self._async_save_last_run(self._last_run.isoformat())
+                            self.async_update_listeners()
+                            if self._should_notify(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH):
+                                await self._async_notify(message="Bewässerung abgeschlossen.")
+                            break
                         continue
 
                 if not infinite and remaining <= 0:
