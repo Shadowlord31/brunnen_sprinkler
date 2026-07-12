@@ -394,6 +394,18 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         except Exception:
             return None
 
+    async def _register_start_time_trigger(self) -> None:
+        """Öffentliche Methode: Zeit-Trigger neu registrieren (z.B. nach Änderung der Startzeit)."""
+        start_time = self._get_zone_start_time()
+        if self._earliest_unsub:
+            self._earliest_unsub()
+            self._earliest_unsub = None
+        if start_time:
+            self._earliest_unsub = async_track_time_change(
+                self.hass, self._async_background_check,
+                hour=start_time.hour, minute=start_time.minute, second=0
+            )
+
     # --- Setup ---
 
     async def async_setup(self) -> bool:
