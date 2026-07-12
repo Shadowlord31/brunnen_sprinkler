@@ -41,7 +41,7 @@ class ActiveSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], BinarySenso
         self._attr_device_info = _device_info(entry)
 
     @property
-    def is_on(self): return self.coordinator.state in (STATE_WATERING, STATE_MANUAL)
+    def is_on(self): return self.coordinator.state in (STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD)
 
 
 class PauseActiveSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], BinarySensorEntity):
