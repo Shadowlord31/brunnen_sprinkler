@@ -39,6 +39,7 @@ from .const import (
     CONF_MOISTURE_SENSOR, CONF_TARGET_MOISTURE, CONF_SECONDS_PER_PERCENT,
     CONF_FIXED_RUNTIME, DEFAULT_FIXED_RUNTIME,
     CONF_AUTO_ENABLED, DEFAULT_AUTO_ENABLED,
+    CONF_ZONE_START_TIME, DEFAULT_ZONE_START_TIME,
     CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND,
     CONF_NOTIFY_SERVICE, CONF_NOTIFY_TITLE,
@@ -48,7 +49,7 @@ from .const import (
     DEFAULT_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED,
     DEFAULT_TARGET_MOISTURE, DEFAULT_SECONDS_PER_PERCENT,
     STATE_IDLE, STATE_WATERING, STATE_PAUSING, STATE_WIND_HOLD,
-    STATE_WAITING_WATER, STATE_MANUAL,
+    STATE_WAITING_WATER, STATE_MANUAL, STATE_WAITING_ZONE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -381,6 +382,18 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         """Prüft direkt in den Zone-Options ob ein Durchflussmesser konfiguriert ist."""
         return bool(self.options.get(CONF_FLOW_SENSOR))
 
+    def _get_zone_start_time(self):
+        """Gibt die konfigurierte Startzeit der Zone zurück."""
+        from datetime import time as _time
+        val = self.options.get(CONF_ZONE_START_TIME, "")
+        if not val:
+            return None
+        try:
+            h, m = map(int, val.split(":"))
+            return _time(h, m)
+        except Exception:
+            return None
+
     # --- Setup ---
 
     async def async_setup(self) -> bool:
@@ -414,16 +427,15 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         )
 
         async def _register_time_trigger(_event=None):
-            garten = self.get_garten()
-            if garten:
-                earliest = garten.get_earliest_start()
-                if earliest:
-                    if self._earliest_unsub:
-                        self._earliest_unsub()
-                    self._earliest_unsub = async_track_time_change(
-                        self.hass, self._async_background_check,
-                        hour=earliest.hour, minute=earliest.minute, second=0
-                    )
+            # Eigene Zonen-Startzeit als Trigger setzen
+            start_time = self._get_zone_start_time()
+            if start_time:
+                if self._earliest_unsub:
+                    self._earliest_unsub()
+                self._earliest_unsub = async_track_time_change(
+                    self.hass, self._async_background_check,
+                    hour=start_time.hour, minute=start_time.minute, second=0
+                )
             self._setup_done = True
 
         if self.hass.is_running:
@@ -511,7 +523,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         return True
 
     async def async_stop_watering(self) -> None:
-        was_active = self._state != STATE_IDLE
+        was_active = self._state not in (STATE_IDLE, STATE_WAITING_ZONE)
         self._state = STATE_IDLE
         self._manual_active = False
         if self._watering_task:
@@ -756,10 +768,20 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return
         self.async_update_listeners()  # Nächster-Start Sensor aktuell halten
         if self._should_start_auto():
-            await self.async_start_watering()
+            garten = self.get_garten()
+            if garten and garten._any_zone_active():
+                # Andere Zone aktiv → Warte-Task starten falls noch nicht aktiv
+                if self._state == STATE_IDLE:
+                    self._state = STATE_WAITING_ZONE
+                    self.async_update_listeners()
+                    self._watering_task = self.hass.async_create_task(
+                        self._async_wait_for_zone_and_start()
+                    )
+            else:
+                await self.async_start_watering()
 
     def _should_start_auto(self) -> bool:
-        if self._state != STATE_IDLE:
+        if self._state not in (STATE_IDLE,):
             return False
         if not self._auto_enabled:
             return False
@@ -770,12 +792,19 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if not garten:
             return False
 
-        earliest = garten.get_earliest_start()
-        if not earliest or now().time() < earliest:
+        # Eigene Zonen-Startzeit prüfen
+        start_time = self._get_zone_start_time()
+        if not start_time or now().time() < start_time:
             return False
+
+        # Globales "nicht vor" Limit des Gartens
+        earliest = garten.get_earliest_start()
+        if earliest and now().time() < earliest:
+            return False
+
         if not garten.get_solar_ok():
             return False
-        if not garten.get_wind_ok():
+        if not garten.get_wind_ok() and not self.options.get(CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND):
             return False
         if not garten.get_giess_ok():
             return False
@@ -941,11 +970,33 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         self.hass.async_create_task(_send())
 
+    async def _async_wait_for_zone_and_start(self) -> None:
+        """Wartet bis alle anderen Zonen fertig sind, dann starten."""
+        try:
+            while self._state == STATE_WAITING_ZONE:
+                await asyncio.sleep(30)
+                garten = self.get_garten()
+                if not garten:
+                    break
+                if not garten._any_zone_active():
+                    # Alle Zonen fertig → prüfen ob wir noch starten sollen
+                    self._state = STATE_IDLE
+                    if self._should_start_auto():
+                        await self.async_start_watering()
+                    break
+                self.async_update_listeners()
+        except asyncio.CancelledError:
+            if self._state == STATE_WAITING_ZONE:
+                self._state = STATE_IDLE
+            self.async_update_listeners()
+
     def _get_next_start_info(self) -> str:
         if self._state == STATE_WATERING:
             return "Läuft"
         if self._state == STATE_MANUAL:
             return "Manuell aktiv"
+        if self._state == STATE_WAITING_ZONE:
+            return "Wartet auf andere Zone"
         if self._state in (STATE_PAUSING, STATE_WAITING_WATER):
             return f"Pause ({self._block_remaining_s / 60:.0f} Min)"
         if self._state == STATE_WIND_HOLD:
@@ -971,13 +1022,13 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if not garten.get_giess_ok():
             return "Heute nicht nötig"
 
-        earliest = garten.get_earliest_start()
-        if not earliest:
-            return "Unbekannt"
-        if now().time() < earliest:
-            return f"{earliest.strftime('%H:%M')} Uhr"
-        # Zeit >= Frühestzeit
-        if not garten.get_wind_ok():
+        start_time = self._get_zone_start_time()
+        if not start_time:
+            return "Keine Startzeit"
+        if now().time() < start_time:
+            return f"{start_time.strftime('%H:%M')} Uhr"
+        # Zeit >= Startzeit
+        if not garten.get_wind_ok() and not self.options.get(CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND):
             return "Wind zu stark"
         if not garten.get_solar_ok():
             return "Wartet auf weniger Sonne"
