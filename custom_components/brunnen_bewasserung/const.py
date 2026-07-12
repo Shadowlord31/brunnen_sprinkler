@@ -3,6 +3,7 @@ DOMAIN = "brunnen_bewasserung"
 # Entry-Typen
 ENTRY_TYPE_GARTEN = "garten"
 ENTRY_TYPE_ZONE = "zone"
+ENTRY_TYPE_MANUELL = "manuell"
 CONF_ENTRY_TYPE = "entry_type"
 
 # === GARTEN ===
@@ -70,6 +71,8 @@ STATE_WIND_HOLD = "wind_hold"
 STATE_WAITING_WATER = "waiting_water"
 STATE_MANUAL = "manual"
 STATE_WAITING_ZONE = "waiting_zone"  # wartet bis andere Zone fertig
+STATE_MANUELL_OPEN = "manuell_open"   # Manuell-Zone: Ventil offen
+STATE_MANUELL_PAUSE = "manuell_pause"  # Manuell-Zone: Brunnenpause
 
 # Attribute
 ATTR_REMAINING_S = "remaining_seconds"
