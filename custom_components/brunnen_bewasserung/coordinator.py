@@ -50,6 +50,8 @@ from .const import (
     DEFAULT_TARGET_MOISTURE, DEFAULT_SECONDS_PER_PERCENT,
     STATE_IDLE, STATE_WATERING, STATE_PAUSING, STATE_WIND_HOLD,
     STATE_WAITING_WATER, STATE_MANUAL, STATE_WAITING_ZONE,
+    STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE,
+    ENTRY_TYPE_MANUELL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1066,3 +1068,91 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if not garten.get_solar_ok():
             return "Wartet auf weniger Sonne"
         return "Jetzt"
+
+class ManuelleZoneCoordinator(DataUpdateCoordinator):
+    """Manuell-Zone: einfacher Ventil-Schalter mit Brunnen-Monitoring."""
+
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+        super().__init__(hass, _LOGGER, name=f"{DOMAIN}_manuell")
+        self._config_entry = config_entry
+        self._state: str = STATE_IDLE
+        self._in_brunnen_pause: bool = False
+        self._was_open_before_pause: bool = False
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    @property
+    def options(self) -> dict:
+        merged = dict(self._config_entry.data)
+        merged.update(self._config_entry.options)
+        return merged
+
+    def get_garten(self) -> "GartenCoordinator | None":
+        parent_id = self.options.get(CONF_PARENT_ENTRY_ID)
+        if not parent_id:
+            return None
+        coord = self.hass.data.get(DOMAIN, {}).get(parent_id)
+        return coord if isinstance(coord, GartenCoordinator) else None
+
+    async def async_setup(self) -> bool:
+        self._state = STATE_IDLE
+        return True
+
+    async def async_shutdown(self) -> None:
+        await self._async_valve_off()
+
+    async def async_open(self) -> None:
+        """Ventil öffnen."""
+        if self._state in (STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE):
+            return
+        self._state = STATE_MANUELL_OPEN
+        self._in_brunnen_pause = False
+        await self._async_valve_on()
+        self.async_update_listeners()
+
+    async def async_close(self) -> None:
+        """Ventil schließen."""
+        was_active = self._state != STATE_IDLE
+        self._state = STATE_IDLE
+        self._in_brunnen_pause = False
+        await self._async_valve_off()
+        self.async_update_listeners()
+
+    async def async_pause_for_brunnen(self) -> None:
+        """Brunnenpause – Ventil zu, Zustand merken."""
+        self._was_open_before_pause = self._state == STATE_MANUELL_OPEN
+        if self._was_open_before_pause:
+            self._state = STATE_MANUELL_PAUSE
+            self._in_brunnen_pause = True
+            await self._async_valve_off()
+            self.async_update_listeners()
+
+    async def async_resume_after_brunnen(self) -> None:
+        """Nach Brunnenpause: wenn vorher offen, wieder öffnen."""
+        self._in_brunnen_pause = False
+        if self._was_open_before_pause and self._state == STATE_MANUELL_PAUSE:
+            self._state = STATE_MANUELL_OPEN
+            await self._async_valve_on()
+            self.async_update_listeners()
+
+    async def _async_valve_on(self) -> None:
+        garten = self.get_garten()
+        if garten:
+            await garten.async_main_pump_on()
+        valve = self.options.get(CONF_PUMP_SWITCH)
+        if valve:
+            await self.hass.services.async_call(
+                valve.split(".")[0], "turn_on", {"entity_id": valve}, blocking=True
+            )
+
+    async def _async_valve_off(self) -> None:
+        valve = self.options.get(CONF_PUMP_SWITCH)
+        if valve:
+            await self.hass.services.async_call(
+                valve.split(".")[0], "turn_off", {"entity_id": valve}, blocking=True
+            )
+        garten = self.get_garten()
+        if garten:
+            await garten.async_main_pump_off()
