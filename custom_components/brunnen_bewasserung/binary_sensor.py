@@ -109,7 +109,7 @@ class GartenAktivSensor(BinarySensorEntity):
         _update_subscriptions()
 
         # Alle 10s prüfen ob neue Zonen dazugekommen sind + State aktualisieren
-        def _tick(_now=None):
+        async def _tick(_now=None):
             _update_subscriptions()
             self.async_write_ha_state()
 
