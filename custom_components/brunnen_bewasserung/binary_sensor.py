@@ -9,7 +9,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN, CONF_PARENT_ENTRY_ID,
-    STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD,
+    STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD, STATE_WAITING_ZONE,
 )
 from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator
 
