@@ -29,6 +29,7 @@ from .const import (
     CONF_SECONDS_PER_PERCENT, DEFAULT_SECONDS_PER_PERCENT,
     CONF_FIXED_RUNTIME, DEFAULT_FIXED_RUNTIME,
     CONF_AUTO_ENABLED, DEFAULT_AUTO_ENABLED,
+    CONF_ZONE_START_TIME, DEFAULT_ZONE_START_TIME,
     CONF_MIN_REMAINDER_BLOCK, DEFAULT_MIN_REMAINDER_BLOCK,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_ON_START, CONF_NOTIFY_ON_FINISH, CONF_NOTIFY_ON_BLOCK_PAUSE,
@@ -102,6 +103,7 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_MOISTURE_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_FLOW_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Required(CONF_AUTO_ENABLED, default=DEFAULT_AUTO_ENABLED): BooleanSelector(),
+            vol.Optional(CONF_ZONE_START_TIME): TimeSelector(),
         }))
 
     async def async_step_zone_settings(self, user_input=None):
@@ -176,6 +178,7 @@ class BrunnenOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(CONF_MOISTURE_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_FLOW_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Required(CONF_AUTO_ENABLED, default=d.get(CONF_AUTO_ENABLED, DEFAULT_AUTO_ENABLED)): BooleanSelector(),
+            vol.Optional(CONF_ZONE_START_TIME): TimeSelector(),
             vol.Optional(CONF_NOTIFY_SERVICE): EntitySelector(EntitySelectorConfig(domain=["notify", "script"])),
         }))
 
