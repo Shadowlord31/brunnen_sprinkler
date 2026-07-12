@@ -47,6 +47,8 @@ CONF_TARGET_MOISTURE = "target_moisture"
 CONF_SECONDS_PER_PERCENT = "seconds_per_percent"
 CONF_FIXED_RUNTIME = "fixed_runtime"
 CONF_AUTO_ENABLED = "auto_enabled"
+CONF_ZONE_START_TIME = "zone_start_time"
+DEFAULT_ZONE_START_TIME = "17:30"
 CONF_MIN_REMAINDER_BLOCK = "min_remainder_block"
 CONF_IGNORE_WIND = "ignore_wind"
 DEFAULT_IGNORE_WIND = False
@@ -67,6 +69,7 @@ STATE_PAUSING = "pausing"
 STATE_WIND_HOLD = "wind_hold"
 STATE_WAITING_WATER = "waiting_water"
 STATE_MANUAL = "manual"
+STATE_WAITING_ZONE = "waiting_zone"  # wartet bis andere Zone fertig
 
 # Attribute
 ATTR_REMAINING_S = "remaining_seconds"
