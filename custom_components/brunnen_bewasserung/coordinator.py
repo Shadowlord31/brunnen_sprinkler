@@ -503,7 +503,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self._total_blocks = ceil(runtime_s / block_s) if not math.isinf(runtime_s) else 0
 
         self._current_block = 1
-        self._remaining_s = max(0.0, runtime_s - block_s) if not math.isinf(runtime_s) else float("inf")
+        # _remaining_s = Gesamtrestzeit (immer volle Laufzeit, wird im Block heruntergezählt)
+        self._remaining_s = runtime_s
 
         self._watering_task = self.hass.async_create_task(
             self._async_run_watering_cycle(block_s, runtime_s)
@@ -702,6 +703,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 elapsed += step
                 if not infinite:
                     self._block_remaining_s = max(0.0, duration_s - elapsed)
+                    self._remaining_s = max(0.0, self._remaining_s - step)
                 if self._zone_has_flow_sensor() and garten:
                     if garten.get_flow_since(self._flow_value_at_start) >= flow_limit:
                         self.async_update_listeners()
