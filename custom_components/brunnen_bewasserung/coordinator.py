@@ -327,6 +327,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._auto_enabled: bool = True
         self._manual_active: bool = False
         self._flow_value_at_start: float = 0.0
+        self._in_brunnen_pause: bool = False
         self._watering_task: asyncio.Task | None = None
         self._wind_unsub: Callable | None = None
         self._time_unsub: Callable | None = None
@@ -560,6 +561,22 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self._auto_enabled = enabled
         await self.hass.async_add_executor_job(self._save_auto_enabled_sync, enabled)
         self.async_update_listeners()
+
+    async def async_pause_for_brunnen(self) -> None:
+        """Brunnenpause – Pumpe aus, Zustand merken (nur wenn watering)."""
+        if self._state == STATE_WATERING:
+            self._in_brunnen_pause = True
+            await self._async_pump_off()
+            self._state = STATE_WAITING_WATER
+            self.async_update_listeners()
+
+    async def async_resume_after_brunnen(self) -> None:
+        """Nach Brunnenpause: Pumpe wieder an."""
+        self._in_brunnen_pause = False
+        if self._state == STATE_WAITING_WATER:
+            self._state = STATE_WATERING
+            await self._async_pump_on()
+            self.async_update_listeners()
 
     async def async_skip_today(self) -> None:
         self._last_run = now().date()
