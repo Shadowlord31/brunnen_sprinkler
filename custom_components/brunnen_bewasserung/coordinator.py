@@ -617,13 +617,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     self.async_update_listeners()
                     if self._should_notify(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH):
                         await self._async_notify(message="Bewässerung abgeschlossen.")
-                    # Idle-Timer starten damit Brunnen-Zähler nach X Min zurückgesetzt wird
-                    garten_final = self.get_garten()
-                    if garten_final and garten_final.has_flow_sensor():
-                        if garten_final._flow_idle_task is None or garten_final._flow_idle_task.done():
-                            garten_final._flow_idle_task = self.hass.async_create_task(
-                                garten_final._async_flow_idle_countdown()
-                            )
                     break
 
                 # Brunnenpause nach Durchfluss-Limit
