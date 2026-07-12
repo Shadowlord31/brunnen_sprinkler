@@ -580,8 +580,24 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         try:
             while True:
-                self._state = STATE_WATERING
-                self.async_update_listeners()
+                # Wind prüfen bevor Block startet
+                garten_check = self.get_garten()
+                ignore_wind = self.options.get(CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND)
+                if garten_check and not ignore_wind and not garten_check.get_wind_ok():
+                    # Wind zu stark → warten bis Wind nachlässt
+                    self._state = STATE_WIND_HOLD
+                    self.async_update_listeners()
+                    if self._should_notify(CONF_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_WIND):
+                        await self._async_notify(message="Wind zu stark – warte auf Windberuhigung.")
+                    while not ignore_wind and garten_check and not garten_check.get_wind_ok():
+                        await asyncio.sleep(30)
+                        if self._state == STATE_IDLE:
+                            return
+                    self._state = STATE_WATERING
+                    self.async_update_listeners()
+                else:
+                    self._state = STATE_WATERING
+                    self.async_update_listeners()
                 await self._async_pump_on()
                 await self._async_run_block(current_block_s)
                 await self._async_pump_off()
