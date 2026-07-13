@@ -231,6 +231,19 @@ class GartenCoordinator(DataUpdateCoordinator):
                 remaining = max(remaining, getattr(coord, "_block_remaining_s", 0.0) or 0.0)
         return remaining
 
+    def get_automatik_aktiv(self) -> bool:
+        """True wenn eine Automatik-Zone dieses Gartens gerade bewaessert
+        oder auf ihren Start wartet (z.B. weil eine Brunnenpause laeuft)."""
+        active_states = {STATE_WATERING, STATE_WAITING_ZONE}
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if not hasattr(coord, "_state") or not hasattr(coord, "options"):
+                continue
+            if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
+                continue
+            if coord._state in active_states:
+                return True
+        return False
+
     async def _async_flow_idle_countdown(self) -> None:
         """Wartet X Minuten ohne Durchfluss-Änderung dann Reset."""
         try:
@@ -534,7 +547,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             self._state = STATE_WAITING_ZONE
             self.async_update_listeners()
             self._watering_task = self.hass.async_create_task(
-                self._async_wait_for_zone_and_start(force=force)
+                self._async_wait_for_zone_and_start(force=force, pause_only=True)
             )
             return True
 
@@ -1028,16 +1041,18 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         self.hass.async_create_task(_send())
 
-    async def _async_wait_for_zone_and_start(self, force: bool = False) -> None:
-        """Wartet bis Brunnenpause / andere Zonen vorbei sind, dann starten."""
+    async def _async_wait_for_zone_and_start(self, force: bool = False, pause_only: bool = False) -> None:
+        """Wartet bis die Brunnenpause vorbei ist (pause_only=True) oder bis
+        wirklich alle anderen Zonen fertig sind (pause_only=False, fuer die
+        klassische Zonen-Wartekette beim geplanten Auto-Start), dann starten."""
         try:
             while self._state == STATE_WAITING_ZONE:
                 await asyncio.sleep(30)
                 garten = self.get_garten()
                 if not garten:
                     break
-                if not garten._any_zone_active():
-                    # Alle Zonen fertig, keine Pause mehr → prüfen ob wir noch starten sollen
+                still_blocked = garten._any_zone_in_pause() if pause_only else garten._any_zone_active()
+                if not still_blocked:
                     self._state = STATE_IDLE
                     if force or self._should_start_auto():
                         await self.async_start_watering(force=force)
