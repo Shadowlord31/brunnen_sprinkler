@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME,
     CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN,
+    STATE_MANUELL_OPEN,
 )
 from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator
 
@@ -22,7 +23,7 @@ def _garten_device(entry): return DeviceInfo(identifiers={(DOMAIN, entry.entry_i
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN:
         coordinator: GartenCoordinator = hass.data[DOMAIN][entry.entry_id]
-        async_add_entities([GartenFlowCounterSensor(coordinator, entry)])
+        async_add_entities([GartenFlowCounterSensor(coordinator, entry), GartenManuellOffenSensor(coordinator, entry)])
         return
     coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
@@ -47,6 +48,48 @@ class GartenFlowCounterSensor(CoordinatorEntity[GartenCoordinator], SensorEntity
     @property
     def native_value(self):
         return round(self.coordinator.flow_counter, 1)
+
+
+class GartenManuellOffenSensor(SensorEntity):
+    """Anzahl aktuell geoeffneter Manuell-Zonen dieses Gartens."""
+    _attr_icon = "mdi:valve-open"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: GartenCoordinator, entry):
+        self._coordinator = coordinator
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_manuell_offen"
+        self._attr_name = "Manuell offen"
+        self._attr_device_info = _garten_device(entry)
+        self._unsubs = []
+
+    async def async_added_to_hass(self) -> None:
+        from datetime import timedelta
+        from homeassistant.helpers.event import async_track_time_interval
+
+        async def _tick(_now=None):
+            self.async_write_ha_state()
+
+        self._unsubs.append(
+            async_track_time_interval(self.hass, _tick, timedelta(seconds=10))
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
+
+    @property
+    def native_value(self):
+        return sum(1 for z in self._coordinator.get_open_zones() if z.state == STATE_MANUELL_OPEN)
+
+    @property
+    def extra_state_attributes(self):
+        names = [
+            z.options.get(CONF_INSTANCE_NAME, "Manuell")
+            for z in self._coordinator.get_open_zones() if z.state == STATE_MANUELL_OPEN
+        ]
+        return {"zonen": names}
 
 
 class StatusSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], SensorEntity):
