@@ -217,6 +217,20 @@ class GartenCoordinator(DataUpdateCoordinator):
                 return True
         return False
 
+    def get_pause_remaining_s(self) -> float:
+        """Restzeit (Sekunden) der laengsten aktuell laufenden Brunnenpause
+        dieses Gartens, 0 wenn keine Zone gerade pausiert."""
+        pause_states = {STATE_WAITING_WATER, STATE_MANUELL_PAUSE}
+        remaining = 0.0
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if not hasattr(coord, "_state") or not hasattr(coord, "options"):
+                continue
+            if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
+                continue
+            if coord._state in pause_states:
+                remaining = max(remaining, getattr(coord, "_block_remaining_s", 0.0) or 0.0)
+        return remaining
+
     async def _async_flow_idle_countdown(self) -> None:
         """Wartet X Minuten ohne Durchfluss-Änderung dann Reset."""
         try:
@@ -1087,10 +1101,15 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
         self._was_open_before_pause: bool = False
         self._flow_value_at_start: float = 0.0
         self._monitor_task: asyncio.Task | None = None
+        self._block_remaining_s: float = 0.0
 
     @property
     def state(self) -> str:
         return self._state
+
+    @property
+    def block_remaining_s(self) -> float:
+        return self._block_remaining_s
 
     @property
     def options(self) -> dict:
@@ -1202,9 +1221,14 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
                     )
                     pause_s = pause_min * 60
                     elapsed = 0.0
+                    self._block_remaining_s = pause_s
+                    self.async_update_listeners()
                     while elapsed < pause_s and self._state == STATE_MANUELL_PAUSE:
                         await asyncio.sleep(1)
                         elapsed += 1
+                        self._block_remaining_s = max(0.0, pause_s - elapsed)
+                        self.async_update_listeners()
+                    self._block_remaining_s = 0.0
                     if self._state != STATE_MANUELL_PAUSE:
                         continue
                     self._flow_value_at_start = garten.flow_counter
