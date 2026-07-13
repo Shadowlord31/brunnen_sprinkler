@@ -511,6 +511,19 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return False
 
         garten = self.get_garten()
+
+        if garten and garten._any_zone_in_pause():
+            # Brunnen erholt sich gerade (Automatik- oder Manuell-Zone in
+            # Pause) - erst starten wenn die Pause vorbei ist. Gilt auch
+            # fuer force=True (Start-Button): der Brunnen braucht die
+            # Erholzeit unabhaengig davon, warum die Zone starten will.
+            self._state = STATE_WAITING_ZONE
+            self.async_update_listeners()
+            self._watering_task = self.hass.async_create_task(
+                self._async_wait_for_zone_and_start(force=force)
+            )
+            return True
+
         runtime_s = self._calculate_runtime()
 
         if runtime_s <= 0:
@@ -1001,8 +1014,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         self.hass.async_create_task(_send())
 
-    async def _async_wait_for_zone_and_start(self) -> None:
-        """Wartet bis alle anderen Zonen fertig sind, dann starten."""
+    async def _async_wait_for_zone_and_start(self, force: bool = False) -> None:
+        """Wartet bis Brunnenpause / andere Zonen vorbei sind, dann starten."""
         try:
             while self._state == STATE_WAITING_ZONE:
                 await asyncio.sleep(30)
@@ -1010,10 +1023,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 if not garten:
                     break
                 if not garten._any_zone_active():
-                    # Alle Zonen fertig → prüfen ob wir noch starten sollen
+                    # Alle Zonen fertig, keine Pause mehr → prüfen ob wir noch starten sollen
                     self._state = STATE_IDLE
-                    if self._should_start_auto():
-                        await self.async_start_watering()
+                    if force or self._should_start_auto():
+                        await self.async_start_watering(force=force)
                     break
                 self.async_update_listeners()
         except asyncio.CancelledError:
