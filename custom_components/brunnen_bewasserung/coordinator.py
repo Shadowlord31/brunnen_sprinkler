@@ -724,6 +724,12 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                             if self._should_notify(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH):
                                 await self._async_notify(message="Bewässerung abgeschlossen.")
                             break
+                        # Block auf die tatsächliche Restzeit reduzieren -
+                        # sonst startet der naechste Block mit der urspruenglichen
+                        # vollen Laufzeit statt der schon verbrauchten Restzeit
+                        # (Etappe zeigt dann faelschlich einen viel zu grossen Wert).
+                        if not infinite:
+                            current_block_s = self._remaining_s
                         continue
 
                 if not infinite and remaining <= 0:
@@ -745,7 +751,11 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     # Startwert aktualisieren für nächsten Durchfluss-Zyklus
                     self._flow_value_at_start = garten.flow_counter
                     self._current_block += 1
-                    # Restlaufzeit bleibt unverändert - Block läuft weiter
+                    # Block auf die tatsaechliche Restzeit reduzieren, damit
+                    # der naechste Durchlauf nicht wieder mit der vollen
+                    # urspruenglichen Laufzeit startet (siehe oben).
+                    if not infinite:
+                        current_block_s = self._remaining_s
                 else:
                     # Ohne Durchflussmesser: Zeit-basierte Blocks
                     await self._async_run_pause_time(garten)
