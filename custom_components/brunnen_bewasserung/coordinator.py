@@ -327,9 +327,16 @@ class GartenCoordinator(DataUpdateCoordinator):
             )
             await asyncio.sleep(2)
 
-    async def async_main_pump_off(self) -> None:
+    async def async_main_pump_off(self, exclude: object | None = None) -> None:
         if not self.options.get(CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF):
             return  # Pumpe wird extern gesteuert
+        # Nur ausschalten wenn wirklich keine andere Zone (Automatik oder
+        # Manuell) dieses Gartens noch offen ist. `exclude` ist der Aufrufer
+        # selbst, dessen intern gespeicherter State zu diesem Zeitpunkt evtl.
+        # noch nicht auf "geschlossen" aktualisiert wurde.
+        other_open = [z for z in self.get_open_zones() if z is not exclude]
+        if other_open:
+            return
         pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
         if pump:
             await self.hass.services.async_call(
@@ -866,7 +873,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             )
         garten = self.get_garten()
         if garten:
-            await garten.async_main_pump_off()
+            await garten.async_main_pump_off(exclude=self)
 
     # --- Storage ---
 
@@ -1157,7 +1164,7 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
             )
         garten = self.get_garten()
         if garten:
-            await garten.async_main_pump_off()
+            await garten.async_main_pump_off(exclude=self)
 
     def _has_flow_sensor(self) -> bool:
         """Prueft ob ein Durchflussmesser fuer diese Manuell-Zone konfiguriert ist."""
