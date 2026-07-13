@@ -11,7 +11,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     DOMAIN,
-    CONF_ENTRY_TYPE, ENTRY_TYPE_GARTEN, ENTRY_TYPE_ZONE,
+    CONF_ENTRY_TYPE, ENTRY_TYPE_GARTEN, ENTRY_TYPE_ZONE, ENTRY_TYPE_MANUELL,
     CONF_GARTEN_NAME, CONF_PARENT_ENTRY_ID, CONF_INSTANCE_NAME, CONF_PUMP_SWITCH,
     CONF_MAIN_PUMP_SWITCH, CONF_FLOW_SENSOR, CONF_FLOW_PAUSE_LITERS, DEFAULT_FLOW_PAUSE_LITERS,
     CONF_FLOW_IDLE_TIMEOUT, DEFAULT_FLOW_IDLE_TIMEOUT,
@@ -50,16 +50,39 @@ class BrunnenBewasserungConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         if user_input is not None:
-            return await self.async_step_garten() if user_input["type"] == "garten" else await self.async_step_zone()
+            t = user_input["type"]
+            if t == "garten":
+                return await self.async_step_garten()
+            if t == "manuell":
+                return await self.async_step_manuell()
+            return await self.async_step_zone()
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required("type", default="zone"): SelectSelector(SelectSelectorConfig(options=[
                     {"value": "garten", "label": "🌿 Garten anlegen"},
                     {"value": "zone", "label": "💧 Zone hinzufügen"},
+                    {"value": "manuell", "label": "🚰 Manuelle Zone hinzufügen"},
                 ], mode=SelectSelectorMode.LIST)),
             }),
         )
+
+    async def async_step_manuell(self, user_input=None):
+        errors = {}
+        garten_entries = [e for e in self.hass.config_entries.async_entries(DOMAIN) if e.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN]
+        if not garten_entries:
+            errors["base"] = "no_garten"
+        if user_input is not None and not errors:
+            self._data.update(user_input)
+            self._data[CONF_ENTRY_TYPE] = ENTRY_TYPE_MANUELL
+            return self.async_create_entry(title=f"🚰 {user_input.get(CONF_INSTANCE_NAME, 'Manuell')}", data=self._data)
+        garten_options = [{"value": e.entry_id, "label": e.data.get(CONF_GARTEN_NAME, e.entry_id)} for e in garten_entries]
+        return self.async_show_form(step_id="manuell", errors=errors, data_schema=vol.Schema({
+            vol.Required(CONF_PARENT_ENTRY_ID): SelectSelector(SelectSelectorConfig(options=garten_options, mode=SelectSelectorMode.DROPDOWN)),
+            vol.Required(CONF_INSTANCE_NAME, default="Manuell"): TextSelector(),
+            vol.Required(CONF_PUMP_SWITCH): EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
+            vol.Optional(CONF_FLOW_SENSOR): EntitySelector(EntitySelectorConfig(domain="sensor")),
+        }))
 
     async def async_step_garten(self, user_input=None):
         if user_input is not None:
@@ -131,9 +154,22 @@ class BrunnenOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         self._data = {**self.config_entry.data, **self.config_entry.options}
-        if self._data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN:
+        entry_type = self._data.get(CONF_ENTRY_TYPE)
+        if entry_type == ENTRY_TYPE_GARTEN:
             return await self.async_step_garten(user_input)
+        if entry_type == ENTRY_TYPE_MANUELL:
+            return await self.async_step_manuell(user_input)
         return await self.async_step_zone(user_input)
+
+    async def async_step_manuell(self, user_input=None):
+        if user_input is not None:
+            self._data.update(user_input)
+            return self.async_create_entry(title="", data=self._data)
+        d = self._data
+        return self.async_show_form(step_id="manuell", data_schema=vol.Schema({
+            vol.Required(CONF_PUMP_SWITCH, default=d.get(CONF_PUMP_SWITCH)): EntitySelector(EntitySelectorConfig(domain=["switch", "input_boolean"])),
+            vol.Optional(CONF_FLOW_SENSOR, description={"suggested_value": d.get(CONF_FLOW_SENSOR)}): EntitySelector(EntitySelectorConfig(domain="sensor")),
+        }))
 
     async def async_step_garten(self, user_input=None):
         d = self._data
