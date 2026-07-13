@@ -27,7 +27,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities([
         StartButton(coordinator, entry),
         StopButton(coordinator, entry),
-        ManualStartButton(coordinator, entry),
         ResetButton(coordinator, entry),
     ])
 
@@ -56,19 +55,6 @@ class StopButton(CoordinatorEntity[BrunnenBewasserungCoordinator], ButtonEntity)
 
     async def async_press(self) -> None:
         await self.coordinator.async_stop_watering()
-
-
-class ManualStartButton(CoordinatorEntity[BrunnenBewasserungCoordinator], ButtonEntity):
-    _attr_icon = "mdi:faucet"
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_manual_start"
-        self._attr_name = "Manuell starten"
-        self._attr_device_info = _device_info(entry)
-
-    async def async_press(self) -> None:
-        await self.coordinator.async_start_manual()
 
 
 class ResetButton(CoordinatorEntity[BrunnenBewasserungCoordinator], ButtonEntity):
