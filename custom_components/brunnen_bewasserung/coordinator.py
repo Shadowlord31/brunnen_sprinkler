@@ -177,16 +177,15 @@ class GartenCoordinator(DataUpdateCoordinator):
 
         self.async_update_listeners()
 
-    def _any_zone_active(self, exclude: object | None = None) -> bool:
+    def _any_zone_active(self) -> bool:
         """True wenn mindestens eine Zone dieses Gartens gerade aktiv ist
         (inkl. Block-/Wind-/Brunnenpausen - deckt sich mit der Definition
-        von binary_sensor.*_bewasserung_aktiv). `exclude` blendet den
-        Aufrufer selbst aus, dessen intern gespeicherter State im Moment
-        des Aufrufs evtl. noch nicht auf "geschlossen" aktualisiert ist."""
+        von binary_sensor.*_bewasserung_aktiv). Absichtlich OHNE exclude:
+        die eigene Pause einer Zone soll den Garten weiterhin als "aktiv"
+        zaehlen, sonst wuerde z.B. die Hauptpumpe waehrend der eigenen
+        Brunnenpause einer Zone ausgehen, obwohl Bewaesserung aktiv noch an ist."""
         active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE}
         for coord in self.hass.data.get(DOMAIN, {}).values():
-            if coord is exclude:
-                continue
             # Prüfe ob es ein Zonen-Coordinator ist (hat CONF_PARENT_ENTRY_ID)
             if not hasattr(coord, '_state'):
                 continue
@@ -360,14 +359,13 @@ class GartenCoordinator(DataUpdateCoordinator):
             )
             await asyncio.sleep(2)
 
-    async def async_main_pump_off(self, exclude: object | None = None) -> None:
+    async def async_main_pump_off(self) -> None:
         if not self.options.get(CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF):
             return  # Pumpe wird extern gesteuert
         # Nur ausschalten wenn wirklich GAR KEINE Zone dieses Gartens mehr
-        # aktiv ist - auch nicht in einer Block-/Wind-/Brunnenpause. Das
-        # deckt sich mit binary_sensor.*_bewasserung_aktiv und verhindert
-        # haeufiges An/Aus-Takten zwischen Bewaesserungs-Bloecken.
-        if self._any_zone_active(exclude=exclude):
+        # aktiv ist - auch nicht in der eigenen Block-/Wind-/Brunnenpause.
+        # Deckt sich 1:1 mit binary_sensor.*_bewasserung_aktiv.
+        if self._any_zone_active():
             return
         pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
         if pump:
@@ -918,7 +916,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             )
         garten = self.get_garten()
         if garten:
-            await garten.async_main_pump_off(exclude=self)
+            await garten.async_main_pump_off()
 
     # --- Storage ---
 
@@ -1216,7 +1214,7 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
             )
         garten = self.get_garten()
         if garten:
-            await garten.async_main_pump_off(exclude=self)
+            await garten.async_main_pump_off()
 
     def _has_flow_sensor(self) -> bool:
         """Prueft ob ein Durchflussmesser fuer diese Manuell-Zone konfiguriert ist."""
