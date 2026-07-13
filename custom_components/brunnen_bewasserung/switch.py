@@ -44,7 +44,9 @@ class ManuellVentilSwitch(CoordinatorEntity[ManuelleZoneCoordinator], SwitchEnti
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.state in (STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE)
+        # Zeigt den echten Ventilzustand: waehrend Brunnenpause ist das Ventil
+        # physisch zu, auch wenn die Zone konzeptionell noch "aktiv" ist.
+        return self.coordinator.state == STATE_MANUELL_OPEN
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.coordinator.async_open()
