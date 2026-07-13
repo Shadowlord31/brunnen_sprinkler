@@ -7,8 +7,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN, CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND, CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF
-from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator
+from .const import DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN, ENTRY_TYPE_MANUELL, CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND, CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE
+from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator, ManuelleZoneCoordinator
 
 
 def _device_info(entry: ConfigEntry) -> DeviceInfo:
@@ -25,8 +25,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         coordinator: GartenCoordinator = hass.data[DOMAIN][entry.entry_id]
         async_add_entities([AutoPumpOffSwitch(coordinator, entry)])
         return
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_MANUELL:
+        coordinator: ManuelleZoneCoordinator = hass.data[DOMAIN][entry.entry_id]
+        async_add_entities([ManuellVentilSwitch(coordinator, entry)])
+        return
     coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([AutomatikSwitch(coordinator, entry), WindIgnoreSwitch(coordinator, entry)])
+
+
+class ManuellVentilSwitch(CoordinatorEntity[ManuelleZoneCoordinator], SwitchEntity):
+    _attr_icon = "mdi:valve"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_manuell"
+        self._attr_name = "Ventil"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.state in (STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.coordinator.async_open()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.coordinator.async_close()
 
 
 class AutomatikSwitch(CoordinatorEntity[BrunnenBewasserungCoordinator], SwitchEntity):
