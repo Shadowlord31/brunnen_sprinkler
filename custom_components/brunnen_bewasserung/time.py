@@ -73,7 +73,7 @@ class GartenEarliestStartTime(CoordinatorEntity[GartenCoordinator], TimeEntity):
 
 
 class ZoneStartTime(CoordinatorEntity[BrunnenBewasserungCoordinator], TimeEntity):
-    _attr_icon = "mdi:clock-play"
+    _attr_icon = "mdi:clock-start"
 
     def __init__(self, coordinator, entry):
         super().__init__(coordinator)
