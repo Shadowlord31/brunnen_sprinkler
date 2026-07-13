@@ -138,7 +138,7 @@ class GartenAktivSensor(BinarySensorEntity):
 
 
 class GartenAutomatikAktivSensor(BinarySensorEntity):
-    """True wenn eine automatische Zone gerade aktiv bewaessert (kein Manuell)."""
+    """True wenn eine automatische Zone gerade bewaessert oder auf ihren Start wartet."""
     _attr_icon = "mdi:sprinkler-variant"
     _attr_device_class = "running"
     _attr_should_poll = False
@@ -173,7 +173,7 @@ class GartenAutomatikAktivSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        return any(z.state == STATE_WATERING for z in self._coordinator.get_open_zones())
+        return self._coordinator.get_automatik_aktiv()
 
 
 class ManuellAktivSensor(CoordinatorEntity[ManuelleZoneCoordinator], BinarySensorEntity):
