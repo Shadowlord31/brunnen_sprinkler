@@ -177,10 +177,16 @@ class GartenCoordinator(DataUpdateCoordinator):
 
         self.async_update_listeners()
 
-    def _any_zone_active(self) -> bool:
-        """True wenn mindestens eine Zone dieses Gartens gerade aktiv ist."""
-        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE}
+    def _any_zone_active(self, exclude: object | None = None) -> bool:
+        """True wenn mindestens eine Zone dieses Gartens gerade aktiv ist
+        (inkl. Block-/Wind-/Brunnenpausen - deckt sich mit der Definition
+        von binary_sensor.*_bewasserung_aktiv). `exclude` blendet den
+        Aufrufer selbst aus, dessen intern gespeicherter State im Moment
+        des Aufrufs evtl. noch nicht auf "geschlossen" aktualisiert ist."""
+        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE}
         for coord in self.hass.data.get(DOMAIN, {}).values():
+            if coord is exclude:
+                continue
             # Prüfe ob es ein Zonen-Coordinator ist (hat CONF_PARENT_ENTRY_ID)
             if not hasattr(coord, '_state'):
                 continue
@@ -357,12 +363,11 @@ class GartenCoordinator(DataUpdateCoordinator):
     async def async_main_pump_off(self, exclude: object | None = None) -> None:
         if not self.options.get(CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF):
             return  # Pumpe wird extern gesteuert
-        # Nur ausschalten wenn wirklich keine andere Zone (Automatik oder
-        # Manuell) dieses Gartens noch offen ist. `exclude` ist der Aufrufer
-        # selbst, dessen intern gespeicherter State zu diesem Zeitpunkt evtl.
-        # noch nicht auf "geschlossen" aktualisiert wurde.
-        other_open = [z for z in self.get_open_zones() if z is not exclude]
-        if other_open:
+        # Nur ausschalten wenn wirklich GAR KEINE Zone dieses Gartens mehr
+        # aktiv ist - auch nicht in einer Block-/Wind-/Brunnenpause. Das
+        # deckt sich mit binary_sensor.*_bewasserung_aktiv und verhindert
+        # haeufiges An/Aus-Takten zwischen Bewaesserungs-Bloecken.
+        if self._any_zone_active(exclude=exclude):
             return
         pump = self.options.get(CONF_MAIN_PUMP_SWITCH)
         if pump:
