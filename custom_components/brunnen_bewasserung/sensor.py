@@ -23,7 +23,11 @@ def _garten_device(entry): return DeviceInfo(identifiers={(DOMAIN, entry.entry_i
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GARTEN:
         coordinator: GartenCoordinator = hass.data[DOMAIN][entry.entry_id]
-        async_add_entities([GartenFlowCounterSensor(coordinator, entry), GartenManuellOffenSensor(coordinator, entry)])
+        async_add_entities([
+            GartenFlowCounterSensor(coordinator, entry),
+            GartenManuellOffenSensor(coordinator, entry),
+            GartenBrunnenpauseRestzeitSensor(coordinator, entry),
+        ])
         return
     coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
@@ -90,6 +94,41 @@ class GartenManuellOffenSensor(SensorEntity):
             for z in self._coordinator.get_open_zones() if z.state == STATE_MANUELL_OPEN
         ]
         return {"zonen": names}
+
+
+class GartenBrunnenpauseRestzeitSensor(SensorEntity):
+    """Restzeit der aktuell laufenden Brunnenpause (laengste unter allen Zonen dieses Gartens)."""
+    _attr_icon = "mdi:timer-sand"
+    _attr_native_unit_of_measurement = "min"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: GartenCoordinator, entry):
+        self._coordinator = coordinator
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_brunnenpause_restzeit"
+        self._attr_name = "Brunnenpause Restzeit"
+        self._attr_device_info = _garten_device(entry)
+        self._unsubs = []
+
+    async def async_added_to_hass(self) -> None:
+        from datetime import timedelta
+        from homeassistant.helpers.event import async_track_time_interval
+
+        async def _tick(_now=None):
+            self.async_write_ha_state()
+
+        self._unsubs.append(
+            async_track_time_interval(self.hass, _tick, timedelta(seconds=10))
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
+
+    @property
+    def native_value(self):
+        return round(self._coordinator.get_pause_remaining_s() / 60, 1)
 
 
 class StatusSensor(CoordinatorEntity[BrunnenBewasserungCoordinator], SensorEntity):
