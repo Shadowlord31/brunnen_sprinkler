@@ -159,10 +159,18 @@ class GartenCoordinator(DataUpdateCoordinator):
             return
 
         if new_val > self._flow_last_value:
-            # Durchfluss hat sich erhöht → Differenz aufaddieren
+            # Durchfluss hat sich erhöht
             diff = new_val - self._flow_last_value
-            self._flow_counter += diff
             self._flow_last_value = new_val
+            if self._any_zone_in_pause():
+                # Waehrend einer laufenden Brunnenpause zaehlen Nachzuegler-
+                # Werte (z.B. verspaetete Sonoff-Reports) nicht zum Zaehler
+                # und starten den Idle-Timer nicht neu - sonst wird der
+                # Reset am Pausenende (siehe force_reset_flow_counter)
+                # immer wieder verzoegert.
+                self.async_update_listeners()
+                return
+            self._flow_counter += diff
             # Idle-Timer abbrechen und neu starten
             if self._flow_idle_task and not self._flow_idle_task.done():
                 self._flow_idle_task.cancel()
@@ -210,10 +218,14 @@ class GartenCoordinator(DataUpdateCoordinator):
                 result.append(coord)
         return result
 
-    def _any_zone_in_pause(self) -> bool:
-        """True wenn irgendeine Zone dieses Gartens gerade Brunnenpause hat."""
+    def _any_zone_in_pause(self, exclude: object | None = None) -> bool:
+        """True wenn irgendeine Zone dieses Gartens gerade Brunnenpause hat.
+        `exclude` blendet eine Zone aus - z.B. sich selbst, wenn man am Ende
+        der eigenen Pause pruefen will ob noch ANDERE Zonen pausieren."""
         pause_states = {STATE_WAITING_WATER, STATE_MANUELL_PAUSE}
         for coord in self.hass.data.get(DOMAIN, {}).values():
+            if coord is exclude:
+                continue
             if not hasattr(coord, "_state") or not hasattr(coord, "options"):
                 continue
             if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
@@ -221,6 +233,18 @@ class GartenCoordinator(DataUpdateCoordinator):
             if coord._state in pause_states:
                 return True
         return False
+
+    def force_reset_flow_counter(self) -> None:
+        """Setzt den Brunnenzaehler hart auf 0 zurueck, unabhaengig vom
+        Idle-Timer. Wird aufgerufen wenn eine Zonen-Brunnenpause regulaer
+        abgelaufen ist (und keine andere Zone mehr pausiert), damit
+        Nachzuegler-Sensorwerte den Reset nicht dauerhaft verzoegern koennen."""
+        if self._flow_idle_task and not self._flow_idle_task.done():
+            self._flow_idle_task.cancel()
+            self._flow_idle_task = None
+        self._flow_counter = 0.0
+        self._flow_last_value = self._read_total_flow()
+        self.async_update_listeners()
 
     def get_pause_remaining_s(self) -> float:
         """Restzeit (Sekunden) der laengsten aktuell laufenden Brunnenpause
@@ -810,6 +834,10 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 self.async_update_listeners()
         except asyncio.CancelledError:
             return
+        # Pause komplett regulaer abgelaufen: Zaehler hart zuruecksetzen,
+        # falls keine andere Zone dieses Gartens noch pausiert.
+        if not garten._any_zone_in_pause(exclude=self):
+            garten.force_reset_flow_counter()
         self._flow_value_at_start = garten.flow_counter
 
     # --- Wind ---
@@ -1249,6 +1277,10 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
                     self._block_remaining_s = 0.0
                     if self._state != STATE_MANUELL_PAUSE:
                         continue
+                    # Pause komplett regulaer abgelaufen: Zaehler hart
+                    # zuruecksetzen, falls keine andere Zone noch pausiert.
+                    if not garten._any_zone_in_pause(exclude=self):
+                        garten.force_reset_flow_counter()
                     self._flow_value_at_start = garten.flow_counter
                     await self.async_resume_after_brunnen()
                     await self._async_notify(message="Brunnen erholt, weiter.")
