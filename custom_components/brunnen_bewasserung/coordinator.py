@@ -49,7 +49,7 @@ from .const import (
     DEFAULT_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_WIND, DEFAULT_NOTIFY_ON_NO_WATER_NEEDED,
     DEFAULT_TARGET_MOISTURE, DEFAULT_SECONDS_PER_PERCENT,
     STATE_IDLE, STATE_WATERING, STATE_PAUSING, STATE_WIND_HOLD,
-    STATE_WAITING_WATER, STATE_MANUAL, STATE_WAITING_ZONE,
+    STATE_WAITING_WATER, STATE_WAITING_ZONE,
     STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE,
     ENTRY_TYPE_MANUELL,
 )
@@ -179,7 +179,7 @@ class GartenCoordinator(DataUpdateCoordinator):
 
     def _any_zone_active(self) -> bool:
         """True wenn mindestens eine Zone dieses Gartens gerade aktiv ist."""
-        active_states = {STATE_WATERING, STATE_MANUAL, STATE_PAUSING, STATE_WAITING_WATER}
+        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE}
         for coord in self.hass.data.get(DOMAIN, {}).values():
             # Prüfe ob es ein Zonen-Coordinator ist (hat CONF_PARENT_ENTRY_ID)
             if not hasattr(coord, '_state'):
@@ -189,6 +189,31 @@ class GartenCoordinator(DataUpdateCoordinator):
             if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
                 continue
             if coord._state in active_states:
+                return True
+        return False
+
+    def get_open_zones(self) -> list:
+        """Alle aktuell offenen Zonen dieses Gartens (Automatik + Manuell)."""
+        open_states = {STATE_WATERING, STATE_MANUELL_OPEN}
+        result = []
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if not hasattr(coord, "_state") or not hasattr(coord, "options"):
+                continue
+            if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
+                continue
+            if coord._state in open_states:
+                result.append(coord)
+        return result
+
+    def _any_zone_in_pause(self) -> bool:
+        """True wenn irgendeine Zone dieses Gartens gerade Brunnenpause hat."""
+        pause_states = {STATE_WAITING_WATER, STATE_MANUELL_PAUSE}
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if not hasattr(coord, "_state") or not hasattr(coord, "options"):
+                continue
+            if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
+                continue
+            if coord._state in pause_states:
                 return True
         return False
 
@@ -205,10 +230,10 @@ class GartenCoordinator(DataUpdateCoordinator):
             pass  # Timer wurde abgebrochen weil neuer Durchfluss kam
 
     def _get_all_zone_flow_sensors(self) -> list[str]:
-        """Gibt alle konfigurierten Zonen-Durchflusssensoren zurück."""
+        """Gibt alle konfigurierten Zonen-Durchflusssensoren zurück (Automatik + Manuell)."""
         sensors = []
         for coord in self.hass.data.get(DOMAIN, {}).values():
-            if isinstance(coord, BrunnenBewasserungCoordinator):
+            if isinstance(coord, (BrunnenBewasserungCoordinator, ManuelleZoneCoordinator)):
                 parent = coord.options.get(CONF_PARENT_ENTRY_ID)
                 if parent == self._config_entry.entry_id:
                     sensor = coord.options.get(CONF_FLOW_SENSOR)
@@ -217,10 +242,10 @@ class GartenCoordinator(DataUpdateCoordinator):
         return sensors
 
     def _read_total_flow(self) -> float:
-        """Summiert den aktuellen Durchfluss aller Zonen."""
+        """Summiert den aktuellen Durchfluss aller Zonen (Automatik + Manuell)."""
         total = 0.0
         for coord in self.hass.data.get(DOMAIN, {}).values():
-            if isinstance(coord, BrunnenBewasserungCoordinator):
+            if isinstance(coord, (BrunnenBewasserungCoordinator, ManuelleZoneCoordinator)):
                 parent = coord.options.get(CONF_PARENT_ENTRY_ID)
                 if parent == self._config_entry.entry_id:
                     sensor = coord.options.get(CONF_FLOW_SENSOR)
@@ -520,24 +545,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             )
         return True
 
-    async def async_start_manual(self) -> bool:
-        """Manuell-Modus: Ventil auf, Durchfluss überwachen, kein Auto-Stop."""
-        if self._state not in (STATE_IDLE,):
-            return False
-        garten = self.get_garten()
-        self._flow_value_at_start = garten.flow_counter if garten else 0.0
-        self._manual_active = True
-        self._state = STATE_MANUAL
-        await self._async_pump_on()
-        self.async_update_listeners()
-        if self._should_notify(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START):
-            await self._async_notify(message="Manuell-Modus aktiv. Ventil geöffnet.")
-        # Hintergrund-Task für Brunnenpause im Manuell-Modus
-        self._watering_task = self.hass.async_create_task(
-            self._async_run_manual_mode()
-        )
-        return True
-
     async def async_stop_watering(self) -> None:
         was_active = self._state not in (STATE_IDLE, STATE_WAITING_ZONE)
         self._state = STATE_IDLE
@@ -682,41 +689,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                     else:
                         current_block_s = block_duration_s
 
-        except asyncio.CancelledError:
-            pass
-
-    async def _async_run_manual_mode(self) -> None:
-        """Manuell-Modus: läuft bis Stop, überwacht Brunnenpause."""
-        import math
-        garten = self.get_garten()
-        try:
-            while self._state == STATE_MANUAL:
-                await asyncio.sleep(5)
-                if not self._zone_has_flow_sensor() or not garten:
-                    continue
-                flow_since = garten.get_flow_since(self._flow_value_at_start)
-                limit = garten.get_flow_pause_liters()
-                if flow_since >= limit:
-                    # Brunnenpause - Pumpe aus aber State bleibt MANUAL
-                    await self._async_pump_off()
-                    if self._should_notify(CONF_NOTIFY_ON_BLOCK_PAUSE, DEFAULT_NOTIFY_ON_BLOCK_PAUSE):
-                        pause_min = garten.get_pause_duration()
-                        await self._async_notify(
-                            message=f"Manuell: Brunnenpause {pause_min:.0f} Min. ({flow_since:.0f}L gezogen)."
-                        )
-                    # Pause abwarten
-                    pause_s = garten.get_pause_duration() * 60
-                    elapsed = 0.0
-                    while elapsed < pause_s and self._state == STATE_MANUAL:
-                        await asyncio.sleep(1)
-                        elapsed += 1
-                    if self._state != STATE_MANUAL:
-                        break
-                    # Nach Pause: Startwert aktualisieren, Pumpe wieder an
-                    self._flow_value_at_start = garten.flow_counter
-                    await self._async_pump_on()
-                    if self._should_notify(CONF_NOTIFY_ON_BLOCK_PAUSE, DEFAULT_NOTIFY_ON_BLOCK_PAUSE):
-                        await self._async_notify(message="Manuell: Brunnen erholt, weiter.")
         except asyncio.CancelledError:
             pass
 
@@ -1045,8 +1017,6 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
     def _get_next_start_info(self) -> str:
         if self._state == STATE_WATERING:
             return "Läuft"
-        if self._state == STATE_MANUAL:
-            return "Manuell aktiv"
         if self._state == STATE_WAITING_ZONE:
             return "Wartet auf andere Zone"
         if self._state in (STATE_PAUSING, STATE_WAITING_WATER):
@@ -1095,6 +1065,8 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
         self._state: str = STATE_IDLE
         self._in_brunnen_pause: bool = False
         self._was_open_before_pause: bool = False
+        self._flow_value_at_start: float = 0.0
+        self._monitor_task: asyncio.Task | None = None
 
     @property
     def state(self) -> str:
@@ -1118,22 +1090,35 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
         return True
 
     async def async_shutdown(self) -> None:
+        if self._monitor_task:
+            self._monitor_task.cancel()
+            self._monitor_task = None
         await self._async_valve_off()
 
     async def async_open(self) -> None:
         """Ventil öffnen."""
         if self._state in (STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE):
             return
+        garten = self.get_garten()
+        self._flow_value_at_start = garten.flow_counter if garten else 0.0
         self._state = STATE_MANUELL_OPEN
         self._in_brunnen_pause = False
         await self._async_valve_on()
+        if self._has_flow_sensor():
+            self._monitor_task = self.hass.async_create_task(self._async_monitor_brunnen())
         self.async_update_listeners()
 
     async def async_close(self) -> None:
         """Ventil schließen."""
-        was_active = self._state != STATE_IDLE
         self._state = STATE_IDLE
         self._in_brunnen_pause = False
+        if self._monitor_task:
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+            self._monitor_task = None
         await self._async_valve_off()
         self.async_update_listeners()
 
@@ -1173,3 +1158,47 @@ class ManuelleZoneCoordinator(DataUpdateCoordinator):
         garten = self.get_garten()
         if garten:
             await garten.async_main_pump_off()
+
+    def _has_flow_sensor(self) -> bool:
+        """Prueft ob ein Durchflussmesser fuer diese Manuell-Zone konfiguriert ist."""
+        return bool(self.options.get(CONF_FLOW_SENSOR))
+
+    async def _async_monitor_brunnen(self) -> None:
+        """Ueberwacht Durchfluss waehrend Ventil offen ist, loest Brunnenpause aus."""
+        garten = self.get_garten()
+        if not garten:
+            return
+        try:
+            while self._state in (STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE):
+                await asyncio.sleep(5)
+                if self._state != STATE_MANUELL_OPEN:
+                    continue
+                flow_since = garten.get_flow_since(self._flow_value_at_start)
+                if flow_since >= garten.get_flow_pause_liters():
+                    pause_min = garten.get_pause_duration()
+                    await self.async_pause_for_brunnen()
+                    await self._async_notify(
+                        message=f"Brunnenpause {pause_min:.0f} Min. ({flow_since:.0f}L gezogen)."
+                    )
+                    pause_s = pause_min * 60
+                    elapsed = 0.0
+                    while elapsed < pause_s and self._state == STATE_MANUELL_PAUSE:
+                        await asyncio.sleep(1)
+                        elapsed += 1
+                    if self._state != STATE_MANUELL_PAUSE:
+                        continue
+                    self._flow_value_at_start = garten.flow_counter
+                    await self.async_resume_after_brunnen()
+                    await self._async_notify(message="Brunnen erholt, weiter.")
+        except asyncio.CancelledError:
+            pass
+
+    async def _async_notify(self, message: str = "") -> None:
+        instance_name = self.options.get(CONF_INSTANCE_NAME, "Manuell")
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                "persistent_notification", "create",
+                {"title": instance_name, "message": message,
+                 "notification_id": f"brunnen_bewasserung_{self._config_entry.entry_id}"},
+            )
+        )
