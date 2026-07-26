@@ -717,6 +717,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                         # Nach Pause: Lauf beendet wenn keine Restzeit mehr
                         if not infinite and self._remaining_s <= 0:
                             self._state = STATE_IDLE
+                            await self._async_pump_off()
                             self._current_block = 0
                             self._last_run = now().date()
                             await self._async_save_last_run(self._last_run.isoformat())
@@ -734,6 +735,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
                 if not infinite and remaining <= 0:
                     self._state = STATE_IDLE
+                    await self._async_pump_off()
                     self._current_block = 0
                     self._last_run = now().date()
                     await self._async_save_last_run(self._last_run.isoformat())
