@@ -614,9 +614,13 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
 
         if self._should_notify(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START):
             rt = "∞" if math.isinf(runtime_s) else str(round(runtime_s / 60, 1))
-            await self._async_notify(
-                message=f"Bewässerung gestartet. Laufzeit: {rt} Min in {self._total_blocks or '?'} Block(s)."
-            )
+            if self._zone_has_flow_sensor():
+                # Mit Durchflussmesser gibt es keinen Block-Split - die
+                # Block-Info waere hier irrefuehrend (immer "1 Block").
+                start_msg = f"Bewässerung gestartet. Laufzeit: {rt} Min."
+            else:
+                start_msg = f"Bewässerung gestartet. Laufzeit: {rt} Min in {self._total_blocks or '?'} Block(s)."
+            await self._async_notify(message=start_msg)
         return True
 
     async def async_stop_watering(self) -> None:
