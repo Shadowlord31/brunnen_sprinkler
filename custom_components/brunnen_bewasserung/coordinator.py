@@ -1072,8 +1072,14 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 domain = parts[0]
                 service_name = ".".join(parts[1:]) if len(parts) > 1 else ""
                 if domain == "script":
+                    # Feldnamen sind je nach Notify-Skript unterschiedlich
+                    # (z.B. altes master_notify: title/message, neueres
+                    # telegram_notify: titel/nachricht) - beide Varianten
+                    # mitschicken, damit es unabhaengig vom gewaehlten
+                    # Skript funktioniert.
                     await self.hass.services.async_call(domain, service_name, {
                         "title": title, "message": message,
+                        "titel": title, "nachricht": message,
                         "group_admins_enable": True, "group_family_enable": True,
                         "alexa_enabled": False, "google_enabled": False, "critical_enabled": False,
                     }, blocking=False)
