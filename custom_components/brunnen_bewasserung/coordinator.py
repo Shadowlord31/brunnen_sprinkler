@@ -205,6 +205,24 @@ class GartenCoordinator(DataUpdateCoordinator):
                 return True
         return False
 
+    def _any_automatik_zone_active(self) -> bool:
+        """Wie _any_zone_active, aber OHNE manuelle Zonen - Automatik soll
+        nur auf andere Automatik-Laeufe warten, nicht auf offene manuelle
+        Ventile. Fuer die Main-Pumpe (async_main_pump_off) bleibt weiterhin
+        _any_zone_active() (inkl. Manuell) massgeblich, da die Pumpe auch
+        bei offenem Handventil laufen muss."""
+        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD}
+        for coord in self.hass.data.get(DOMAIN, {}).values():
+            if not hasattr(coord, '_state'):
+                continue
+            if not hasattr(coord, 'options'):
+                continue
+            if coord.options.get(CONF_PARENT_ENTRY_ID) != self._config_entry.entry_id:
+                continue
+            if coord._state in active_states:
+                return True
+        return False
+
     def get_open_zones(self) -> list:
         """Alle aktuell offenen Zonen dieses Gartens (Automatik + Manuell)."""
         open_states = {STATE_WATERING, STATE_MANUELL_OPEN}
@@ -887,8 +905,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()  # Nächster-Start Sensor aktuell halten
         if self._should_start_auto():
             garten = self.get_garten()
-            if garten and garten._any_zone_active():
-                # Andere Zone aktiv → Warte-Task starten falls noch nicht aktiv
+            if garten and garten._any_automatik_zone_active():
+                # Andere Automatik-Zone aktiv → Warte-Task starten falls noch nicht aktiv (manuelle Zonen blockieren Automatik nicht)
                 if self._state == STATE_IDLE:
                     self._state = STATE_WAITING_ZONE
                     self.async_update_listeners()
@@ -1104,7 +1122,7 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
                 garten = self.get_garten()
                 if not garten:
                     break
-                still_blocked = garten._any_zone_in_pause() if pause_only else garten._any_zone_active()
+                still_blocked = garten._any_zone_in_pause() if pause_only else garten._any_automatik_zone_active()
                 if not still_blocked:
                     self._state = STATE_IDLE
                     if force or self._should_start_auto():
