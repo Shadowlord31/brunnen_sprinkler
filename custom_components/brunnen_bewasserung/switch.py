@@ -7,7 +7,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN, ENTRY_TYPE_MANUELL, CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND, CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE
+from .const import DOMAIN, CONF_INSTANCE_NAME, CONF_GARTEN_NAME, CONF_ENTRY_TYPE, ENTRY_TYPE_ZONE, ENTRY_TYPE_GARTEN, ENTRY_TYPE_MANUELL, CONF_IGNORE_WIND, DEFAULT_IGNORE_WIND, CONF_AUTO_PUMP_OFF, DEFAULT_AUTO_PUMP_OFF, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE, STATE_WATERING, STATE_MANUAL_HOLD
 from .coordinator import BrunnenBewasserungCoordinator, GartenCoordinator, ManuelleZoneCoordinator
 
 
@@ -30,7 +30,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         async_add_entities([ManuellVentilSwitch(coordinator, entry)])
         return
     coordinator: BrunnenBewasserungCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([AutomatikSwitch(coordinator, entry), WindIgnoreSwitch(coordinator, entry)])
+    async_add_entities([AutomatikSwitch(coordinator, entry), WindIgnoreSwitch(coordinator, entry), ManuellePauseSwitch(coordinator, entry)])
 
 
 class ManuellVentilSwitch(CoordinatorEntity[ManuelleZoneCoordinator], SwitchEntity):
@@ -103,6 +103,35 @@ class WindIgnoreSwitch(CoordinatorEntity[BrunnenBewasserungCoordinator], SwitchE
         new_options[CONF_IGNORE_WIND] = False
         self.hass.config_entries.async_update_entry(self._entry, options=new_options)
         self.coordinator.async_update_listeners()
+
+
+class ManuellePauseSwitch(CoordinatorEntity[BrunnenBewasserungCoordinator], SwitchEntity):
+    """Pausiert eine laufende Automatik-Bewaesserung manuell (eigenes
+    Ventil zu, Hauptpumpe laeuft weiter). Nur waehrend eines aktiven
+    Laufs bedienbar - ausserhalb davon bleibt der Schalter wirkungslos."""
+
+    _attr_icon = "mdi:pause-circle-outline"
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_manual_pause"
+        self._attr_name = "Pause"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.manual_paused
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.state in (STATE_WATERING, STATE_MANUAL_HOLD)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.coordinator.async_set_manual_pause(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.coordinator.async_set_manual_pause(False)
 
 
 class AutoPumpOffSwitch(CoordinatorEntity[GartenCoordinator], SwitchEntity):
