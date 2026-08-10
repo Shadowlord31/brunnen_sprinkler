@@ -73,6 +73,7 @@ STATE_MANUAL = "manual"
 STATE_WAITING_ZONE = "waiting_zone"  # wartet bis andere Zone fertig
 STATE_MANUELL_OPEN = "manuell_open"   # Manuell-Zone: Ventil offen
 STATE_MANUELL_PAUSE = "manuell_pause"  # Manuell-Zone: Brunnenpause
+STATE_MANUAL_HOLD = "manual_hold"  # Automatik-Zone: manuell pausiert (eigenes Ventil zu, Hauptpumpe laeuft weiter)
 
 # Attribute
 ATTR_REMAINING_S = "remaining_seconds"
