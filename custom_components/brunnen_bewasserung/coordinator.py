@@ -50,7 +50,7 @@ from .const import (
     DEFAULT_TARGET_MOISTURE, DEFAULT_SECONDS_PER_PERCENT,
     STATE_IDLE, STATE_WATERING, STATE_PAUSING, STATE_WIND_HOLD,
     STATE_WAITING_WATER, STATE_WAITING_ZONE,
-    STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE,
+    STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE, STATE_MANUAL_HOLD,
     ENTRY_TYPE_MANUELL,
 )
 
@@ -192,7 +192,7 @@ class GartenCoordinator(DataUpdateCoordinator):
         die eigene Pause einer Zone soll den Garten weiterhin als "aktiv"
         zaehlen, sonst wuerde z.B. die Hauptpumpe waehrend der eigenen
         Brunnenpause einer Zone ausgehen, obwohl Bewaesserung aktiv noch an ist."""
-        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE}
+        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD, STATE_MANUAL_HOLD, STATE_MANUELL_OPEN, STATE_MANUELL_PAUSE}
         for coord in self.hass.data.get(DOMAIN, {}).values():
             # Prüfe ob es ein Zonen-Coordinator ist (hat CONF_PARENT_ENTRY_ID)
             if not hasattr(coord, '_state'):
@@ -211,7 +211,7 @@ class GartenCoordinator(DataUpdateCoordinator):
         Ventile. Fuer die Main-Pumpe (async_main_pump_off) bleibt weiterhin
         _any_zone_active() (inkl. Manuell) massgeblich, da die Pumpe auch
         bei offenem Handventil laufen muss."""
-        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD}
+        active_states = {STATE_WATERING, STATE_PAUSING, STATE_WAITING_WATER, STATE_WIND_HOLD, STATE_MANUAL_HOLD}
         for coord in self.hass.data.get(DOMAIN, {}).values():
             if not hasattr(coord, '_state'):
                 continue
@@ -812,8 +812,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         try:
             while infinite or elapsed < duration_s:
                 await asyncio.sleep(step)
-                # Wind-Hold: Zeit nicht weiterzählen
-                if self._state == STATE_WIND_HOLD:
+                # Wind-Hold / manuelle Pause: Zeit nicht weiterzählen
+                if self._state in (STATE_WIND_HOLD, STATE_MANUAL_HOLD):
                     continue
                 elapsed += step
                 if not infinite:
@@ -980,6 +980,51 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
         if garten:
             await garten.async_main_pump_off()
 
+    async def _async_own_switch_on(self) -> None:
+        """Schaltet nur das eigene Zonenventil/-pumpe ein, OHNE die
+        Hauptpumpe des Gartens anzufassen - fuer die manuelle Pause, bei
+        der die Hauptpumpe bewusst weiterlaufen soll."""
+        pump = self.options.get(CONF_PUMP_SWITCH)
+        if pump:
+            await self.hass.services.async_call(
+                pump.split(".")[0], "turn_on", {"entity_id": pump}, blocking=True
+            )
+
+    async def _async_own_switch_off(self) -> None:
+        """Gegenstueck zu _async_own_switch_on - schliesst nur das eigene
+        Zonenventil, laesst die Hauptpumpe unangetastet."""
+        pump = self.options.get(CONF_PUMP_SWITCH)
+        if pump:
+            await self.hass.services.async_call(
+                pump.split(".")[0], "turn_off", {"entity_id": pump}, blocking=True
+            )
+
+    # --- Manuelle Pause ---
+
+    @property
+    def manual_paused(self) -> bool:
+        return self._state == STATE_MANUAL_HOLD
+
+    async def async_set_manual_pause(self, paused: bool) -> None:
+        """Pausiert/setzt eine laufende Automatik-Bewaesserung manuell fort.
+        Nur gueltig waehrend die Zone tatsaechlich giesst bzw. manuell
+        pausiert ist - andere Zustaende (Wind-Pause, Brunnenpause, idle)
+        werden ignoriert, um mit deren eigener State-Verwaltung nicht zu
+        kollidieren. Die Hauptpumpe wird bewusst NICHT angefasst, nur das
+        eigene Zonenventil."""
+        if paused and self._state == STATE_WATERING:
+            self._state = STATE_MANUAL_HOLD
+            await self._async_own_switch_off()
+            if self._should_notify(CONF_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_STOP):
+                await self._async_notify(message="Manuell pausiert.")
+            self.async_update_listeners()
+        elif not paused and self._state == STATE_MANUAL_HOLD:
+            self._state = STATE_WATERING
+            await self._async_own_switch_on()
+            if self._should_notify(CONF_NOTIFY_ON_STOP, DEFAULT_NOTIFY_ON_STOP):
+                await self._async_notify(message="Manuelle Pause beendet. Weiter.")
+            self.async_update_listeners()
+
     # --- Storage ---
 
     def _load_state_sync(self) -> tuple[str | None, bool]:
@@ -1143,6 +1188,8 @@ class BrunnenBewasserungCoordinator(DataUpdateCoordinator):
             return f"Pause ({self._block_remaining_s / 60:.0f} Min)"
         if self._state == STATE_WIND_HOLD:
             return "Wind-Pause"
+        if self._state == STATE_MANUAL_HOLD:
+            return "Manuell pausiert"
         if not self._auto_enabled:
             return "Automatik aus"
         if self._last_run == now().date():
